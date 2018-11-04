@@ -1,0 +1,2118 @@
+ARM GAS  /tmp/ccUExmKF.s 			page 1
+
+
+   1              		.cpu cortex-m3
+   2              		.eabi_attribute 20, 1
+   3              		.eabi_attribute 21, 1
+   4              		.eabi_attribute 23, 3
+   5              		.eabi_attribute 24, 1
+   6              		.eabi_attribute 25, 1
+   7              		.eabi_attribute 26, 1
+   8              		.eabi_attribute 30, 1
+   9              		.eabi_attribute 34, 1
+  10              		.eabi_attribute 18, 4
+  11              		.file	"canard_stm32.c"
+  12              		.text
+  13              	.Ltext0:
+  14              		.cfi_sections	.debug_frame
+  15              		.section	.text.isFramePriorityHigher,"ax",%progbits
+  16              		.align	1
+  17              		.syntax unified
+  18              		.thumb
+  19              		.thumb_func
+  20              		.fpu softvfp
+  22              	isFramePriorityHigher:
+  23              	.LFB65:
+  24              		.file 1 "libcanard/drivers/stm32/canard_stm32.c"
+   1:libcanard/drivers/stm32/canard_stm32.c **** /*
+   2:libcanard/drivers/stm32/canard_stm32.c ****  * Copyright (c) 2017 UAVCAN Team
+   3:libcanard/drivers/stm32/canard_stm32.c ****  *
+   4:libcanard/drivers/stm32/canard_stm32.c ****  * Distributed under the MIT License, available in the file LICENSE.
+   5:libcanard/drivers/stm32/canard_stm32.c ****  *
+   6:libcanard/drivers/stm32/canard_stm32.c ****  * Author: Pavel Kirienko <pavel.kirienko@zubax.com>
+   7:libcanard/drivers/stm32/canard_stm32.c ****  */
+   8:libcanard/drivers/stm32/canard_stm32.c **** 
+   9:libcanard/drivers/stm32/canard_stm32.c **** #include "canard_stm32.h"
+  10:libcanard/drivers/stm32/canard_stm32.c **** #include "_internal_bxcan.h"
+  11:libcanard/drivers/stm32/canard_stm32.c **** #include <unistd.h>
+  12:libcanard/drivers/stm32/canard_stm32.c **** #include "main.h"
+  13:libcanard/drivers/stm32/canard_stm32.c **** #include "stm32f1xx_hal.h"
+  14:libcanard/drivers/stm32/canard_stm32.c **** 
+  15:libcanard/drivers/stm32/canard_stm32.c **** 
+  16:libcanard/drivers/stm32/canard_stm32.c **** #if CANARD_STM32_USE_CAN2
+  17:libcanard/drivers/stm32/canard_stm32.c **** # define BXCAN                                                  CANARD_STM32_CAN2
+  18:libcanard/drivers/stm32/canard_stm32.c **** #else
+  19:libcanard/drivers/stm32/canard_stm32.c **** # define BXCAN                                                  CANARD_STM32_CAN1
+  20:libcanard/drivers/stm32/canard_stm32.c **** #endif
+  21:libcanard/drivers/stm32/canard_stm32.c **** 
+  22:libcanard/drivers/stm32/canard_stm32.c **** /*
+  23:libcanard/drivers/stm32/canard_stm32.c ****  * State variables
+  24:libcanard/drivers/stm32/canard_stm32.c ****  */
+  25:libcanard/drivers/stm32/canard_stm32.c **** static CanardSTM32Stats g_stats;
+  26:libcanard/drivers/stm32/canard_stm32.c **** 
+  27:libcanard/drivers/stm32/canard_stm32.c **** static bool g_abort_tx_on_error = false;
+  28:libcanard/drivers/stm32/canard_stm32.c **** 
+  29:libcanard/drivers/stm32/canard_stm32.c **** 
+  30:libcanard/drivers/stm32/canard_stm32.c **** static bool isFramePriorityHigher(uint32_t a, uint32_t b)
+  31:libcanard/drivers/stm32/canard_stm32.c **** {
+  25              		.loc 1 31 0
+  26              		.cfi_startproc
+  27              		@ args = 0, pretend = 0, frame = 0
+ARM GAS  /tmp/ccUExmKF.s 			page 2
+
+
+  28              		@ frame_needed = 0, uses_anonymous_args = 0
+  29              		@ link register save eliminated.
+  30              	.LVL0:
+  31 0000 30B4     		push	{r4, r5}
+  32              	.LCFI0:
+  33              		.cfi_def_cfa_offset 8
+  34              		.cfi_offset 4, -8
+  35              		.cfi_offset 5, -4
+  32:libcanard/drivers/stm32/canard_stm32.c ****     const uint32_t clean_a = a & CANARD_CAN_EXT_ID_MASK;
+  36              		.loc 1 32 0
+  37 0002 20F06045 		bic	r5, r0, #-536870912
+  38              	.LVL1:
+  33:libcanard/drivers/stm32/canard_stm32.c ****     const uint32_t clean_b = b & CANARD_CAN_EXT_ID_MASK;
+  39              		.loc 1 33 0
+  40 0006 21F06044 		bic	r4, r1, #-536870912
+  41              	.LVL2:
+  34:libcanard/drivers/stm32/canard_stm32.c **** 
+  35:libcanard/drivers/stm32/canard_stm32.c ****     /*
+  36:libcanard/drivers/stm32/canard_stm32.c ****      * STD vs EXT - if 11 most significant bits are the same, EXT loses.
+  37:libcanard/drivers/stm32/canard_stm32.c ****      */
+  38:libcanard/drivers/stm32/canard_stm32.c ****     const bool ext_a = (a & CANARD_CAN_FRAME_EFF) != 0;
+  39:libcanard/drivers/stm32/canard_stm32.c ****     const bool ext_b = (b & CANARD_CAN_FRAME_EFF) != 0;
+  42              		.loc 1 39 0
+  43 000a CB0F     		lsrs	r3, r1, #31
+  44              	.LVL3:
+  40:libcanard/drivers/stm32/canard_stm32.c ****     if (ext_a != ext_b)
+  45              		.loc 1 40 0
+  46 000c B3EBD07F 		cmp	r3, r0, lsr #31
+  47 0010 0FD0     		beq	.L2
+  48              	.LBB2:
+  41:libcanard/drivers/stm32/canard_stm32.c ****     {
+  42:libcanard/drivers/stm32/canard_stm32.c ****         const uint32_t arb11_a = ext_a ? (clean_a >> 18U) : clean_a;
+  49              		.loc 1 42 0
+  50 0012 0028     		cmp	r0, #0
+  51 0014 09DB     		blt	.L10
+  52              	.LVL4:
+  53              	.L3:
+  43:libcanard/drivers/stm32/canard_stm32.c ****         const uint32_t arb11_b = ext_b ? (clean_b >> 18U) : clean_b;
+  54              		.loc 1 43 0 discriminator 4
+  55 0016 0029     		cmp	r1, #0
+  56 0018 09DB     		blt	.L11
+  57              	.LVL5:
+  58              	.L4:
+  44:libcanard/drivers/stm32/canard_stm32.c ****         if (arb11_a != arb11_b)
+  59              		.loc 1 44 0 discriminator 4
+  60 001a A542     		cmp	r5, r4
+  61 001c 18D0     		beq	.L7
+  45:libcanard/drivers/stm32/canard_stm32.c ****         {
+  46:libcanard/drivers/stm32/canard_stm32.c ****             return arb11_a < arb11_b;
+  62              		.loc 1 46 0
+  63 001e A542     		cmp	r5, r4
+  64 0020 2CBF     		ite	cs
+  65 0022 0020     		movcs	r0, #0
+  66              	.LVL6:
+  67 0024 0120     		movcc	r0, #1
+  68              	.LVL7:
+  69              	.L5:
+ARM GAS  /tmp/ccUExmKF.s 			page 3
+
+
+  70              	.LBE2:
+  47:libcanard/drivers/stm32/canard_stm32.c ****         }
+  48:libcanard/drivers/stm32/canard_stm32.c ****         else
+  49:libcanard/drivers/stm32/canard_stm32.c ****         {
+  50:libcanard/drivers/stm32/canard_stm32.c ****             return ext_b;
+  51:libcanard/drivers/stm32/canard_stm32.c ****         }
+  52:libcanard/drivers/stm32/canard_stm32.c ****     }
+  53:libcanard/drivers/stm32/canard_stm32.c **** 
+  54:libcanard/drivers/stm32/canard_stm32.c ****     /*
+  55:libcanard/drivers/stm32/canard_stm32.c ****      * RTR vs Data frame - if frame identifiers and frame types are the same, RTR loses.
+  56:libcanard/drivers/stm32/canard_stm32.c ****      */
+  57:libcanard/drivers/stm32/canard_stm32.c ****     const bool rtr_a = (a & CANARD_CAN_FRAME_RTR) != 0;
+  58:libcanard/drivers/stm32/canard_stm32.c ****     const bool rtr_b = (b & CANARD_CAN_FRAME_RTR) != 0;
+  59:libcanard/drivers/stm32/canard_stm32.c ****     if ((clean_a == clean_b) && (rtr_a != rtr_b))
+  60:libcanard/drivers/stm32/canard_stm32.c ****     {
+  61:libcanard/drivers/stm32/canard_stm32.c ****         return rtr_b;
+  62:libcanard/drivers/stm32/canard_stm32.c ****     }
+  63:libcanard/drivers/stm32/canard_stm32.c **** 
+  64:libcanard/drivers/stm32/canard_stm32.c ****     /*
+  65:libcanard/drivers/stm32/canard_stm32.c ****      * Plain ID arbitration - greater value loses.
+  66:libcanard/drivers/stm32/canard_stm32.c ****      */
+  67:libcanard/drivers/stm32/canard_stm32.c ****     return clean_a < clean_b;
+  68:libcanard/drivers/stm32/canard_stm32.c **** }
+  71              		.loc 1 68 0
+  72 0026 30BC     		pop	{r4, r5}
+  73              	.LCFI1:
+  74              		.cfi_remember_state
+  75              		.cfi_restore 5
+  76              		.cfi_restore 4
+  77              		.cfi_def_cfa_offset 0
+  78 0028 7047     		bx	lr
+  79              	.LVL8:
+  80              	.L10:
+  81              	.LCFI2:
+  82              		.cfi_restore_state
+  83              	.LBB3:
+  42:libcanard/drivers/stm32/canard_stm32.c ****         const uint32_t arb11_b = ext_b ? (clean_b >> 18U) : clean_b;
+  84              		.loc 1 42 0 discriminator 1
+  85 002a AD0C     		lsrs	r5, r5, #18
+  86              	.LVL9:
+  87 002c F3E7     		b	.L3
+  88              	.LVL10:
+  89              	.L11:
+  43:libcanard/drivers/stm32/canard_stm32.c ****         if (arb11_a != arb11_b)
+  90              		.loc 1 43 0 discriminator 1
+  91 002e A40C     		lsrs	r4, r4, #18
+  92              	.LVL11:
+  93 0030 F3E7     		b	.L4
+  94              	.LVL12:
+  95              	.L2:
+  96              	.LBE3:
+  57:libcanard/drivers/stm32/canard_stm32.c ****     const bool rtr_b = (b & CANARD_CAN_FRAME_RTR) != 0;
+  97              		.loc 1 57 0
+  98 0032 C0F38072 		ubfx	r2, r0, #30, #1
+  99              	.LVL13:
+  58:libcanard/drivers/stm32/canard_stm32.c ****     if ((clean_a == clean_b) && (rtr_a != rtr_b))
+ 100              		.loc 1 58 0
+ARM GAS  /tmp/ccUExmKF.s 			page 4
+
+
+ 101 0036 C1F38071 		ubfx	r1, r1, #30, #1
+ 102              	.LVL14:
+  59:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 103              		.loc 1 59 0
+ 104 003a A542     		cmp	r5, r4
+ 105 003c 04D0     		beq	.L12
+ 106              	.L6:
+  67:libcanard/drivers/stm32/canard_stm32.c **** }
+ 107              		.loc 1 67 0
+ 108 003e A542     		cmp	r5, r4
+ 109 0040 2CBF     		ite	cs
+ 110 0042 0020     		movcs	r0, #0
+ 111              	.LVL15:
+ 112 0044 0120     		movcc	r0, #1
+ 113 0046 EEE7     		b	.L5
+ 114              	.LVL16:
+ 115              	.L12:
+  59:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 116              		.loc 1 59 0 discriminator 1
+ 117 0048 8A42     		cmp	r2, r1
+ 118 004a F8D0     		beq	.L6
+  61:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 119              		.loc 1 61 0
+ 120 004c 0846     		mov	r0, r1
+ 121              	.LVL17:
+ 122 004e EAE7     		b	.L5
+ 123              	.LVL18:
+ 124              	.L7:
+ 125              	.LBB4:
+  50:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 126              		.loc 1 50 0
+ 127 0050 1846     		mov	r0, r3
+ 128              	.LVL19:
+ 129 0052 E8E7     		b	.L5
+ 130              	.LBE4:
+ 131              		.cfi_endproc
+ 132              	.LFE65:
+ 134              		.section	.text.convertFrameIDCanardToRegister,"ax",%progbits
+ 135              		.align	1
+ 136              		.syntax unified
+ 137              		.thumb
+ 138              		.thumb_func
+ 139              		.fpu softvfp
+ 141              	convertFrameIDCanardToRegister:
+ 142              	.LFB66:
+  69:libcanard/drivers/stm32/canard_stm32.c **** 
+  70:libcanard/drivers/stm32/canard_stm32.c **** /// Converts libcanard ID value into the bxCAN TX ID register format.
+  71:libcanard/drivers/stm32/canard_stm32.c **** static uint32_t convertFrameIDCanardToRegister(const uint32_t id)
+  72:libcanard/drivers/stm32/canard_stm32.c **** {
+ 143              		.loc 1 72 0
+ 144              		.cfi_startproc
+ 145              		@ args = 0, pretend = 0, frame = 0
+ 146              		@ frame_needed = 0, uses_anonymous_args = 0
+ 147              		@ link register save eliminated.
+ 148              	.LVL20:
+  73:libcanard/drivers/stm32/canard_stm32.c ****     uint32_t out = 0;
+  74:libcanard/drivers/stm32/canard_stm32.c **** 
+ARM GAS  /tmp/ccUExmKF.s 			page 5
+
+
+  75:libcanard/drivers/stm32/canard_stm32.c ****     if (id & CANARD_CAN_FRAME_EFF)
+ 149              		.loc 1 75 0
+ 150 0000 021E     		subs	r2, r0, #0
+ 151 0002 06DB     		blt	.L17
+  76:libcanard/drivers/stm32/canard_stm32.c ****     {
+  77:libcanard/drivers/stm32/canard_stm32.c ****         out = ((id & CANARD_CAN_EXT_ID_MASK) << 3U) | CANARD_STM32_CAN_TIR_IDE;
+  78:libcanard/drivers/stm32/canard_stm32.c ****     }
+  79:libcanard/drivers/stm32/canard_stm32.c ****     else
+  80:libcanard/drivers/stm32/canard_stm32.c ****     {
+  81:libcanard/drivers/stm32/canard_stm32.c ****         out = ((id & CANARD_CAN_STD_ID_MASK) << 21U);
+ 152              		.loc 1 81 0
+ 153 0004 5005     		lsls	r0, r2, #21
+ 154              	.LVL21:
+ 155              	.L15:
+  82:libcanard/drivers/stm32/canard_stm32.c ****     }
+  83:libcanard/drivers/stm32/canard_stm32.c **** 
+  84:libcanard/drivers/stm32/canard_stm32.c ****     if (id & CANARD_CAN_FRAME_RTR)
+ 156              		.loc 1 84 0
+ 157 0006 12F0804F 		tst	r2, #1073741824
+ 158 000a 01D0     		beq	.L13
+  85:libcanard/drivers/stm32/canard_stm32.c ****     {
+  86:libcanard/drivers/stm32/canard_stm32.c ****         out |= CANARD_STM32_CAN_TIR_RTR;
+ 159              		.loc 1 86 0
+ 160 000c 40F00200 		orr	r0, r0, #2
+ 161              	.LVL22:
+ 162              	.L13:
+  87:libcanard/drivers/stm32/canard_stm32.c ****     }
+  88:libcanard/drivers/stm32/canard_stm32.c **** 
+  89:libcanard/drivers/stm32/canard_stm32.c ****     return out;
+  90:libcanard/drivers/stm32/canard_stm32.c **** }
+ 163              		.loc 1 90 0
+ 164 0010 7047     		bx	lr
+ 165              	.LVL23:
+ 166              	.L17:
+  77:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 167              		.loc 1 77 0
+ 168 0012 D300     		lsls	r3, r2, #3
+ 169 0014 43F00400 		orr	r0, r3, #4
+ 170              	.LVL24:
+ 171 0018 F5E7     		b	.L15
+ 172              		.cfi_endproc
+ 173              	.LFE66:
+ 175              		.section	.text.convertFrameIDRegisterToCanard,"ax",%progbits
+ 176              		.align	1
+ 177              		.syntax unified
+ 178              		.thumb
+ 179              		.thumb_func
+ 180              		.fpu softvfp
+ 182              	convertFrameIDRegisterToCanard:
+ 183              	.LFB67:
+  91:libcanard/drivers/stm32/canard_stm32.c **** 
+  92:libcanard/drivers/stm32/canard_stm32.c **** /// Converts bxCAN TX/RX (sic! both RX/TX are supported) ID register value into the libcanard ID fo
+  93:libcanard/drivers/stm32/canard_stm32.c **** static uint32_t convertFrameIDRegisterToCanard(const uint32_t id)
+  94:libcanard/drivers/stm32/canard_stm32.c **** {
+ 184              		.loc 1 94 0
+ 185              		.cfi_startproc
+ 186              		@ args = 0, pretend = 0, frame = 0
+ARM GAS  /tmp/ccUExmKF.s 			page 6
+
+
+ 187              		@ frame_needed = 0, uses_anonymous_args = 0
+ 188              		@ link register save eliminated.
+ 189              	.LVL25:
+  95:libcanard/drivers/stm32/canard_stm32.c **** #if (CANARD_STM32_CAN_TIR_RTR != CANARD_STM32_CAN_RIR_RTR) ||\
+  96:libcanard/drivers/stm32/canard_stm32.c ****     (CANARD_STM32_CAN_TIR_IDE != CANARD_STM32_CAN_RIR_IDE)
+  97:libcanard/drivers/stm32/canard_stm32.c **** # error "RIR bits do not match TIR bits, TIR --> libcanard conversion is not possible"
+  98:libcanard/drivers/stm32/canard_stm32.c **** #endif
+  99:libcanard/drivers/stm32/canard_stm32.c **** 
+ 100:libcanard/drivers/stm32/canard_stm32.c ****     uint32_t out = 0;
+ 101:libcanard/drivers/stm32/canard_stm32.c **** 
+ 102:libcanard/drivers/stm32/canard_stm32.c ****     if ((id & CANARD_STM32_CAN_RIR_IDE) == 0)
+ 190              		.loc 1 102 0
+ 191 0000 10F0040F 		tst	r0, #4
+ 192 0004 07D1     		bne	.L19
+ 103:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 104:libcanard/drivers/stm32/canard_stm32.c ****         out = (CANARD_CAN_STD_ID_MASK & (id >> 21U));
+ 193              		.loc 1 104 0
+ 194 0006 430D     		lsrs	r3, r0, #21
+ 195              	.LVL26:
+ 196              	.L20:
+ 105:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 106:libcanard/drivers/stm32/canard_stm32.c ****     else
+ 107:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 108:libcanard/drivers/stm32/canard_stm32.c ****         out = (CANARD_CAN_EXT_ID_MASK & (id >> 3U)) | CANARD_CAN_FRAME_EFF;
+ 109:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 110:libcanard/drivers/stm32/canard_stm32.c **** 
+ 111:libcanard/drivers/stm32/canard_stm32.c ****     if ((id & CANARD_STM32_CAN_RIR_RTR) != 0)
+ 197              		.loc 1 111 0
+ 198 0008 10F0020F 		tst	r0, #2
+ 199 000c 01D0     		beq	.L18
+ 112:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 113:libcanard/drivers/stm32/canard_stm32.c ****         out |= CANARD_CAN_FRAME_RTR;
+ 200              		.loc 1 113 0
+ 201 000e 43F08043 		orr	r3, r3, #1073741824
+ 202              	.LVL27:
+ 203              	.L18:
+ 114:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 115:libcanard/drivers/stm32/canard_stm32.c **** 
+ 116:libcanard/drivers/stm32/canard_stm32.c ****     return out;
+ 117:libcanard/drivers/stm32/canard_stm32.c **** }
+ 204              		.loc 1 117 0
+ 205 0012 1846     		mov	r0, r3
+ 206              	.LVL28:
+ 207 0014 7047     		bx	lr
+ 208              	.LVL29:
+ 209              	.L19:
+ 108:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 210              		.loc 1 108 0
+ 211 0016 C308     		lsrs	r3, r0, #3
+ 212 0018 43F00043 		orr	r3, r3, #-2147483648
+ 213              	.LVL30:
+ 214 001c F4E7     		b	.L20
+ 215              		.cfi_endproc
+ 216              	.LFE67:
+ 218              		.section	.text.processErrorStatus,"ax",%progbits
+ 219              		.align	1
+ 220              		.syntax unified
+ARM GAS  /tmp/ccUExmKF.s 			page 7
+
+
+ 221              		.thumb
+ 222              		.thumb_func
+ 223              		.fpu softvfp
+ 225              	processErrorStatus:
+ 226              	.LFB69:
+ 118:libcanard/drivers/stm32/canard_stm32.c **** 
+ 119:libcanard/drivers/stm32/canard_stm32.c **** 
+ 120:libcanard/drivers/stm32/canard_stm32.c **** static bool waitMSRINAKBitStateChange(volatile const CanardSTM32CANType* const bxcan, const bool ta
+ 121:libcanard/drivers/stm32/canard_stm32.c **** {
+ 122:libcanard/drivers/stm32/canard_stm32.c ****     /**
+ 123:libcanard/drivers/stm32/canard_stm32.c ****      * A properly functioning bus will exhibit 11 consecutive recessive bits at the end of every co
+ 124:libcanard/drivers/stm32/canard_stm32.c ****      * or while the bus is idle. The 11 consecutive recessive bits are made up of:
+ 125:libcanard/drivers/stm32/canard_stm32.c ****      *  1 bit - acknowledgement delimiter
+ 126:libcanard/drivers/stm32/canard_stm32.c ****      *  7 bit - end of frame bits
+ 127:libcanard/drivers/stm32/canard_stm32.c ****      *  3 bit - inter frame space
+ 128:libcanard/drivers/stm32/canard_stm32.c ****      * This adds up to 11; therefore, it is not really necessary to wait longer than a few frame TX
+ 129:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 130:libcanard/drivers/stm32/canard_stm32.c ****     static const uint16_t TimeoutMilliseconds = 1000;
+ 131:libcanard/drivers/stm32/canard_stm32.c **** 
+ 132:libcanard/drivers/stm32/canard_stm32.c ****     for (uint16_t wait_ack = 0; wait_ack < TimeoutMilliseconds; wait_ack++)
+ 133:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 134:libcanard/drivers/stm32/canard_stm32.c ****         const bool state = (bxcan->MSR & CANARD_STM32_CAN_MSR_INAK) != 0;
+ 135:libcanard/drivers/stm32/canard_stm32.c ****         if (state == target_state)
+ 136:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 137:libcanard/drivers/stm32/canard_stm32.c ****             return true;
+ 138:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 139:libcanard/drivers/stm32/canard_stm32.c **** 
+ 140:libcanard/drivers/stm32/canard_stm32.c ****         // Sleep 1 millisecond
+ 141:libcanard/drivers/stm32/canard_stm32.c ****         HAL_Delay(1);           // TODO: This function may be missing on some platforms
+ 142:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 143:libcanard/drivers/stm32/canard_stm32.c **** 
+ 144:libcanard/drivers/stm32/canard_stm32.c ****     return false;
+ 145:libcanard/drivers/stm32/canard_stm32.c **** }
+ 146:libcanard/drivers/stm32/canard_stm32.c **** 
+ 147:libcanard/drivers/stm32/canard_stm32.c **** 
+ 148:libcanard/drivers/stm32/canard_stm32.c **** static void processErrorStatus(void)
+ 149:libcanard/drivers/stm32/canard_stm32.c **** {
+ 227              		.loc 1 149 0
+ 228              		.cfi_startproc
+ 229              		@ args = 0, pretend = 0, frame = 0
+ 230              		@ frame_needed = 0, uses_anonymous_args = 0
+ 231              		@ link register save eliminated.
+ 150:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 151:libcanard/drivers/stm32/canard_stm32.c ****      * Aborting TX transmissions if abort on error was requested
+ 152:libcanard/drivers/stm32/canard_stm32.c ****      * Updating error counter
+ 153:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 154:libcanard/drivers/stm32/canard_stm32.c ****     const uint8_t lec = (uint8_t)((BXCAN->ESR & CANARD_STM32_CAN_ESR_LEC_MASK) >> CANARD_STM32_CAN_
+ 232              		.loc 1 154 0
+ 233 0000 0D4B     		ldr	r3, .L25
+ 234 0002 9B69     		ldr	r3, [r3, #24]
+ 235              	.LVL31:
+ 155:libcanard/drivers/stm32/canard_stm32.c **** 
+ 156:libcanard/drivers/stm32/canard_stm32.c ****     if (lec != 0)
+ 236              		.loc 1 156 0
+ 237 0004 13F0700F 		tst	r3, #112
+ 238 0008 15D0     		beq	.L22
+ 157:libcanard/drivers/stm32/canard_stm32.c ****     {
+ARM GAS  /tmp/ccUExmKF.s 			page 8
+
+
+ 158:libcanard/drivers/stm32/canard_stm32.c ****         BXCAN->ESR = 0;                 // This action does only affect the LEC bits, other bits ar
+ 239              		.loc 1 158 0
+ 240 000a 0022     		movs	r2, #0
+ 241 000c 0A4B     		ldr	r3, .L25
+ 242              	.LVL32:
+ 243 000e 9A61     		str	r2, [r3, #24]
+ 159:libcanard/drivers/stm32/canard_stm32.c ****         g_stats.error_count++;
+ 244              		.loc 1 159 0
+ 245 0010 0A49     		ldr	r1, .L25+4
+ 246 0012 D1E90223 		ldrd	r2, [r1, #8]
+ 247 0016 0132     		adds	r2, r2, #1
+ 248 0018 43F10003 		adc	r3, r3, #0
+ 249 001c C1E90223 		strd	r2, [r1, #8]
+ 160:libcanard/drivers/stm32/canard_stm32.c **** 
+ 161:libcanard/drivers/stm32/canard_stm32.c ****         // Abort pending transmissions if auto abort on error is enabled, or if we're in bus off mo
+ 162:libcanard/drivers/stm32/canard_stm32.c ****         if (g_abort_tx_on_error || (BXCAN->ESR & CANARD_STM32_CAN_ESR_BOFF))
+ 250              		.loc 1 162 0
+ 251 0020 074B     		ldr	r3, .L25+8
+ 252 0022 1B78     		ldrb	r3, [r3]	@ zero_extendqisi2
+ 253 0024 23B9     		cbnz	r3, .L24
+ 254              		.loc 1 162 0 is_stmt 0 discriminator 1
+ 255 0026 044B     		ldr	r3, .L25
+ 256 0028 9B69     		ldr	r3, [r3, #24]
+ 257 002a 13F0040F 		tst	r3, #4
+ 258 002e 02D0     		beq	.L22
+ 259              	.L24:
+ 163:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 164:libcanard/drivers/stm32/canard_stm32.c ****             BXCAN->TSR = CANARD_STM32_CAN_TSR_ABRQ0 | CANARD_STM32_CAN_TSR_ABRQ1 | CANARD_STM32_CAN
+ 260              		.loc 1 164 0 is_stmt 1
+ 261 0030 044A     		ldr	r2, .L25+12
+ 262 0032 014B     		ldr	r3, .L25
+ 263 0034 9A60     		str	r2, [r3, #8]
+ 264              	.L22:
+ 265 0036 7047     		bx	lr
+ 266              	.L26:
+ 267              		.align	2
+ 268              	.L25:
+ 269 0038 00640040 		.word	1073767424
+ 270 003c 00000000 		.word	.LANCHOR0
+ 271 0040 00000000 		.word	.LANCHOR1
+ 272 0044 80808000 		.word	8421504
+ 273              		.cfi_endproc
+ 274              	.LFE69:
+ 276              		.section	.text.waitMSRINAKBitStateChange,"ax",%progbits
+ 277              		.align	1
+ 278              		.syntax unified
+ 279              		.thumb
+ 280              		.thumb_func
+ 281              		.fpu softvfp
+ 283              	waitMSRINAKBitStateChange:
+ 284              	.LFB68:
+ 121:libcanard/drivers/stm32/canard_stm32.c ****     /**
+ 285              		.loc 1 121 0
+ 286              		.cfi_startproc
+ 287              		@ args = 0, pretend = 0, frame = 0
+ 288              		@ frame_needed = 0, uses_anonymous_args = 0
+ 289              	.LVL33:
+ARM GAS  /tmp/ccUExmKF.s 			page 9
+
+
+ 290 0000 70B5     		push	{r4, r5, r6, lr}
+ 291              	.LCFI3:
+ 292              		.cfi_def_cfa_offset 16
+ 293              		.cfi_offset 4, -16
+ 294              		.cfi_offset 5, -12
+ 295              		.cfi_offset 6, -8
+ 296              		.cfi_offset 14, -4
+ 297 0002 0646     		mov	r6, r0
+ 298 0004 0D46     		mov	r5, r1
+ 299              	.LVL34:
+ 300              	.LBB5:
+ 132:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 301              		.loc 1 132 0
+ 302 0006 0024     		movs	r4, #0
+ 303              	.LVL35:
+ 304              	.L28:
+ 132:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 305              		.loc 1 132 0 is_stmt 0 discriminator 1
+ 306 0008 B4F57A7F 		cmp	r4, #1000
+ 307 000c 0BD2     		bcs	.L33
+ 308              	.LBB6:
+ 134:libcanard/drivers/stm32/canard_stm32.c ****         if (state == target_state)
+ 309              		.loc 1 134 0 is_stmt 1
+ 310 000e 7368     		ldr	r3, [r6, #4]
+ 311 0010 03F00103 		and	r3, r3, #1
+ 312 0014 DBB2     		uxtb	r3, r3
+ 313              	.LVL36:
+ 135:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 314              		.loc 1 135 0
+ 315 0016 AB42     		cmp	r3, r5
+ 316 0018 07D0     		beq	.L31
+ 141:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 317              		.loc 1 141 0 discriminator 2
+ 318 001a 0120     		movs	r0, #1
+ 319 001c FFF7FEFF 		bl	HAL_Delay
+ 320              	.LVL37:
+ 321              	.LBE6:
+ 132:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 322              		.loc 1 132 0 discriminator 2
+ 323 0020 0134     		adds	r4, r4, #1
+ 324              	.LVL38:
+ 325 0022 A4B2     		uxth	r4, r4
+ 326              	.LVL39:
+ 327 0024 F0E7     		b	.L28
+ 328              	.L33:
+ 329              	.LBE5:
+ 144:libcanard/drivers/stm32/canard_stm32.c **** }
+ 330              		.loc 1 144 0
+ 331 0026 0020     		movs	r0, #0
+ 332              	.LBB8:
+ 333 0028 70BD     		pop	{r4, r5, r6, pc}
+ 334              	.LVL40:
+ 335              	.L31:
+ 336              	.LBB7:
+ 137:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 337              		.loc 1 137 0
+ 338 002a 0120     		movs	r0, #1
+ARM GAS  /tmp/ccUExmKF.s 			page 10
+
+
+ 339              	.LBE7:
+ 340              	.LBE8:
+ 145:libcanard/drivers/stm32/canard_stm32.c **** 
+ 341              		.loc 1 145 0
+ 342 002c 70BD     		pop	{r4, r5, r6, pc}
+ 343              		.cfi_endproc
+ 344              	.LFE68:
+ 346              		.section	.text.canardSTM32Init,"ax",%progbits
+ 347              		.align	1
+ 348              		.global	canardSTM32Init
+ 349              		.syntax unified
+ 350              		.thumb
+ 351              		.thumb_func
+ 352              		.fpu softvfp
+ 354              	canardSTM32Init:
+ 355              	.LFB70:
+ 165:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 166:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 167:libcanard/drivers/stm32/canard_stm32.c **** }
+ 168:libcanard/drivers/stm32/canard_stm32.c **** 
+ 169:libcanard/drivers/stm32/canard_stm32.c **** 
+ 170:libcanard/drivers/stm32/canard_stm32.c **** int16_t canardSTM32Init(const CanardSTM32CANTimings* const timings,
+ 171:libcanard/drivers/stm32/canard_stm32.c ****                         const CanardSTM32IfaceMode iface_mode)
+ 172:libcanard/drivers/stm32/canard_stm32.c **** {
+ 356              		.loc 1 172 0
+ 357              		.cfi_startproc
+ 358              		@ args = 0, pretend = 0, frame = 0
+ 359              		@ frame_needed = 0, uses_anonymous_args = 0
+ 360              	.LVL41:
+ 173:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 174:libcanard/drivers/stm32/canard_stm32.c ****      * Paranoia time.
+ 175:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 176:libcanard/drivers/stm32/canard_stm32.c ****     if ((iface_mode != CanardSTM32IfaceModeNormal) &&
+ 361              		.loc 1 176 0
+ 362 0000 0229     		cmp	r1, #2
+ 363 0002 00F2B480 		bhi	.L41
+ 177:libcanard/drivers/stm32/canard_stm32.c ****         (iface_mode != CanardSTM32IfaceModeSilent) &&
+ 178:libcanard/drivers/stm32/canard_stm32.c ****         (iface_mode != CanardSTM32IfaceModeAutomaticTxAbortOnError))
+ 179:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 180:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_ERROR_INVALID_ARGUMENT;
+ 181:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 182:libcanard/drivers/stm32/canard_stm32.c **** 
+ 183:libcanard/drivers/stm32/canard_stm32.c ****     if ((timings == NULL) ||
+ 364              		.loc 1 183 0
+ 365 0006 0028     		cmp	r0, #0
+ 366 0008 00F0B480 		beq	.L42
+ 172:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 367              		.loc 1 172 0 discriminator 1
+ 368 000c 38B5     		push	{r3, r4, r5, lr}
+ 369              	.LCFI4:
+ 370              		.cfi_def_cfa_offset 16
+ 371              		.cfi_offset 3, -16
+ 372              		.cfi_offset 4, -12
+ 373              		.cfi_offset 5, -8
+ 374              		.cfi_offset 14, -4
+ 184:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_rate_prescaler < 1) || (timings->bit_rate_prescaler > 1024) ||
+ 375              		.loc 1 184 0 discriminator 1
+ARM GAS  /tmp/ccUExmKF.s 			page 11
+
+
+ 376 000e 0388     		ldrh	r3, [r0]
+ 183:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_rate_prescaler < 1) || (timings->bit_rate_prescaler > 1024) ||
+ 377              		.loc 1 183 0 discriminator 1
+ 378 0010 002B     		cmp	r3, #0
+ 379 0012 00F0B280 		beq	.L43
+ 380              		.loc 1 184 0
+ 381 0016 B3F5806F 		cmp	r3, #1024
+ 382 001a 00F2B180 		bhi	.L44
+ 185:libcanard/drivers/stm32/canard_stm32.c ****         (timings->max_resynchronization_jump_width < 1) || (timings->max_resynchronization_jump_wid
+ 383              		.loc 1 185 0 discriminator 1
+ 384 001e 0379     		ldrb	r3, [r0, #4]	@ zero_extendqisi2
+ 184:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_rate_prescaler < 1) || (timings->bit_rate_prescaler > 1024) ||
+ 385              		.loc 1 184 0 discriminator 1
+ 386 0020 002B     		cmp	r3, #0
+ 387 0022 00F0B080 		beq	.L45
+ 388              		.loc 1 185 0
+ 389 0026 042B     		cmp	r3, #4
+ 390 0028 00F2B080 		bhi	.L46
+ 186:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_segment_1 < 1) || (timings->bit_segment_1 > 16) ||
+ 391              		.loc 1 186 0 discriminator 1
+ 392 002c 8378     		ldrb	r3, [r0, #2]	@ zero_extendqisi2
+ 185:libcanard/drivers/stm32/canard_stm32.c ****         (timings->max_resynchronization_jump_width < 1) || (timings->max_resynchronization_jump_wid
+ 393              		.loc 1 185 0 discriminator 1
+ 394 002e 002B     		cmp	r3, #0
+ 395 0030 00F0AF80 		beq	.L47
+ 396              		.loc 1 186 0
+ 397 0034 102B     		cmp	r3, #16
+ 398 0036 00F2AF80 		bhi	.L48
+ 187:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_segment_2 < 1) || (timings->bit_segment_2 > 8))
+ 399              		.loc 1 187 0 discriminator 1
+ 400 003a C378     		ldrb	r3, [r0, #3]	@ zero_extendqisi2
+ 186:libcanard/drivers/stm32/canard_stm32.c ****         (timings->bit_segment_1 < 1) || (timings->bit_segment_1 > 16) ||
+ 401              		.loc 1 186 0 discriminator 1
+ 402 003c 002B     		cmp	r3, #0
+ 403 003e 00F0AE80 		beq	.L49
+ 404              		.loc 1 187 0
+ 405 0042 082B     		cmp	r3, #8
+ 406 0044 00F2AE80 		bhi	.L50
+ 407 0048 0C46     		mov	r4, r1
+ 408 004a 0546     		mov	r5, r0
+ 188:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 189:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_ERROR_INVALID_ARGUMENT;
+ 190:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 191:libcanard/drivers/stm32/canard_stm32.c **** 
+ 192:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 193:libcanard/drivers/stm32/canard_stm32.c ****      * Initial setup
+ 194:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 195:libcanard/drivers/stm32/canard_stm32.c ****     memset(&g_stats, 0, sizeof(g_stats));
+ 409              		.loc 1 195 0
+ 410 004c 574A     		ldr	r2, .L61
+ 411 004e 0023     		movs	r3, #0
+ 412 0050 1360     		str	r3, [r2]
+ 413 0052 5360     		str	r3, [r2, #4]
+ 414 0054 9360     		str	r3, [r2, #8]
+ 415 0056 D360     		str	r3, [r2, #12]
+ 196:libcanard/drivers/stm32/canard_stm32.c **** 
+ 197:libcanard/drivers/stm32/canard_stm32.c ****     g_abort_tx_on_error = (iface_mode == CanardSTM32IfaceModeAutomaticTxAbortOnError);
+ARM GAS  /tmp/ccUExmKF.s 			page 12
+
+
+ 416              		.loc 1 197 0
+ 417 0058 0229     		cmp	r1, #2
+ 418 005a 14BF     		ite	ne
+ 419 005c 0021     		movne	r1, #0
+ 420              	.LVL42:
+ 421 005e 0121     		moveq	r1, #1
+ 422 0060 534A     		ldr	r2, .L61+4
+ 423 0062 1170     		strb	r1, [r2]
+ 198:libcanard/drivers/stm32/canard_stm32.c **** 
+ 199:libcanard/drivers/stm32/canard_stm32.c **** #if CANARD_STM32_USE_CAN2
+ 200:libcanard/drivers/stm32/canard_stm32.c ****     // If we're using CAN2, we MUST initialize CAN1 first, because CAN2 is a slave to CAN1.
+ 201:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->IER = 0;                                 // We need no interrupts
+ 202:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->MCR &= ~CANARD_STM32_CAN_MCR_SLEEP;      // Exit sleep mode
+ 203:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->MCR |= CANARD_STM32_CAN_MCR_INRQ;        // Request init
+ 204:libcanard/drivers/stm32/canard_stm32.c **** 
+ 205:libcanard/drivers/stm32/canard_stm32.c ****     if (!waitMSRINAKBitStateChange(CANARD_STM32_CAN1, true))    // Wait for synchronization
+ 206:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 207:libcanard/drivers/stm32/canard_stm32.c ****         CANARD_STM32_CAN1->MCR = CANARD_STM32_CAN_MCR_RESET;
+ 208:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_MSR_INAK_NOT_SET;
+ 209:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 210:libcanard/drivers/stm32/canard_stm32.c ****     // CAN1 will be left in the initialization mode forever, in this mode it does not affect the bu
+ 211:libcanard/drivers/stm32/canard_stm32.c **** #endif
+ 212:libcanard/drivers/stm32/canard_stm32.c **** 
+ 213:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->IER = 0;                                             // We need no interrupts
+ 424              		.loc 1 213 0
+ 425 0064 5348     		ldr	r0, .L61+8
+ 426              	.LVL43:
+ 427 0066 4361     		str	r3, [r0, #20]
+ 214:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->MCR &= ~CANARD_STM32_CAN_MCR_SLEEP;                  // Exit sleep mode
+ 428              		.loc 1 214 0
+ 429 0068 0368     		ldr	r3, [r0]
+ 430 006a 23F00203 		bic	r3, r3, #2
+ 431 006e 0360     		str	r3, [r0]
+ 215:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->MCR |= CANARD_STM32_CAN_MCR_INRQ;                    // Request init
+ 432              		.loc 1 215 0
+ 433 0070 0368     		ldr	r3, [r0]
+ 434 0072 43F00103 		orr	r3, r3, #1
+ 435 0076 0360     		str	r3, [r0]
+ 216:libcanard/drivers/stm32/canard_stm32.c **** 
+ 217:libcanard/drivers/stm32/canard_stm32.c ****     if (!waitMSRINAKBitStateChange(BXCAN, true))                // Wait for synchronization
+ 436              		.loc 1 217 0
+ 437 0078 0121     		movs	r1, #1
+ 438 007a FFF7FEFF 		bl	waitMSRINAKBitStateChange
+ 439              	.LVL44:
+ 440 007e 0028     		cmp	r0, #0
+ 441 0080 57D0     		beq	.L56
+ 218:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 219:libcanard/drivers/stm32/canard_stm32.c ****         BXCAN->MCR = CANARD_STM32_CAN_MCR_RESET;
+ 220:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_MSR_INAK_NOT_SET;
+ 221:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 222:libcanard/drivers/stm32/canard_stm32.c **** 
+ 223:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 224:libcanard/drivers/stm32/canard_stm32.c ****      * Hardware initialization (the hardware has already confirmed initialization mode, see above)
+ 225:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 226:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->MCR = CANARD_STM32_CAN_MCR_ABOM | CANARD_STM32_CAN_MCR_AWUM | CANARD_STM32_CAN_MCR_INRQ;
+ 442              		.loc 1 226 0
+ 443 0082 6122     		movs	r2, #97
+ARM GAS  /tmp/ccUExmKF.s 			page 13
+
+
+ 444 0084 4B4B     		ldr	r3, .L61+8
+ 445 0086 1A60     		str	r2, [r3]
+ 227:libcanard/drivers/stm32/canard_stm32.c **** 
+ 228:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->BTR = (((timings->max_resynchronization_jump_width - 1U) &    3U) << 24U) |
+ 446              		.loc 1 228 0
+ 447 0088 2B79     		ldrb	r3, [r5, #4]	@ zero_extendqisi2
+ 448 008a 013B     		subs	r3, r3, #1
+ 449 008c 1B06     		lsls	r3, r3, #24
+ 450 008e 03F04073 		and	r3, r3, #50331648
+ 229:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_1 - 1U)                    &   15U) << 16U) |
+ 451              		.loc 1 229 0
+ 452 0092 AA78     		ldrb	r2, [r5, #2]	@ zero_extendqisi2
+ 453 0094 013A     		subs	r2, r2, #1
+ 454 0096 1204     		lsls	r2, r2, #16
+ 455 0098 02F47022 		and	r2, r2, #983040
+ 228:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_1 - 1U)                    &   15U) << 16U) |
+ 456              		.loc 1 228 0
+ 457 009c 1343     		orrs	r3, r3, r2
+ 230:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_2 - 1U)                    &    7U) << 20U) |
+ 458              		.loc 1 230 0
+ 459 009e EA78     		ldrb	r2, [r5, #3]	@ zero_extendqisi2
+ 460 00a0 013A     		subs	r2, r2, #1
+ 461 00a2 1205     		lsls	r2, r2, #20
+ 462 00a4 02F4E002 		and	r2, r2, #7340032
+ 229:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_1 - 1U)                    &   15U) << 16U) |
+ 463              		.loc 1 229 0
+ 464 00a8 1343     		orrs	r3, r3, r2
+ 231:libcanard/drivers/stm32/canard_stm32.c ****                  ((timings->bit_rate_prescaler - 1U)                & 1023U) |
+ 465              		.loc 1 231 0
+ 466 00aa 2A88     		ldrh	r2, [r5]
+ 467 00ac 013A     		subs	r2, r2, #1
+ 468 00ae C2F30902 		ubfx	r2, r2, #0, #10
+ 230:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_2 - 1U)                    &    7U) << 20U) |
+ 469              		.loc 1 230 0
+ 470 00b2 1343     		orrs	r3, r3, r2
+ 232:libcanard/drivers/stm32/canard_stm32.c ****                  ((iface_mode == CanardSTM32IfaceModeSilent) ? CANARD_STM32_CAN_BTR_SILM : 0);
+ 471              		.loc 1 232 0
+ 472 00b4 012C     		cmp	r4, #1
+ 473 00b6 43D0     		beq	.L57
+ 474 00b8 0022     		movs	r2, #0
+ 475              	.L37:
+ 231:libcanard/drivers/stm32/canard_stm32.c ****                  ((timings->bit_rate_prescaler - 1U)                & 1023U) |
+ 476              		.loc 1 231 0
+ 477 00ba 1343     		orrs	r3, r3, r2
+ 228:libcanard/drivers/stm32/canard_stm32.c ****                  (((timings->bit_segment_1 - 1U)                    &   15U) << 16U) |
+ 478              		.loc 1 228 0
+ 479 00bc 3D4A     		ldr	r2, .L61+8
+ 480 00be D361     		str	r3, [r2, #28]
+ 233:libcanard/drivers/stm32/canard_stm32.c **** 
+ 234:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_ASSERT(0 == BXCAN->IER);             // Making sure the iterrupts are indeed disabled
+ 481              		.loc 1 234 0
+ 482 00c0 5369     		ldr	r3, [r2, #20]
+ 483 00c2 002B     		cmp	r3, #0
+ 484 00c4 3FD1     		bne	.L58
+ 235:libcanard/drivers/stm32/canard_stm32.c **** 
+ 236:libcanard/drivers/stm32/canard_stm32.c ****     BXCAN->MCR &= ~CANARD_STM32_CAN_MCR_INRQ;   // Leave init mode
+ 485              		.loc 1 236 0
+ARM GAS  /tmp/ccUExmKF.s 			page 14
+
+
+ 486 00c6 3B48     		ldr	r0, .L61+8
+ 487 00c8 0368     		ldr	r3, [r0]
+ 488 00ca 23F00103 		bic	r3, r3, #1
+ 489 00ce 0360     		str	r3, [r0]
+ 237:libcanard/drivers/stm32/canard_stm32.c **** 
+ 238:libcanard/drivers/stm32/canard_stm32.c ****     if (!waitMSRINAKBitStateChange(BXCAN, false))
+ 490              		.loc 1 238 0
+ 491 00d0 0021     		movs	r1, #0
+ 492 00d2 FFF7FEFF 		bl	waitMSRINAKBitStateChange
+ 493              	.LVL45:
+ 494 00d6 0028     		cmp	r0, #0
+ 495 00d8 3BD0     		beq	.L59
+ 496              	.LBB9:
+ 239:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 240:libcanard/drivers/stm32/canard_stm32.c ****         BXCAN->MCR = CANARD_STM32_CAN_MCR_RESET;
+ 241:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_MSR_INAK_NOT_CLEARED;
+ 242:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 243:libcanard/drivers/stm32/canard_stm32.c **** 
+ 244:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 245:libcanard/drivers/stm32/canard_stm32.c ****      * Default filter configuration. Note that ALL filters are available ONLY via CAN1!
+ 246:libcanard/drivers/stm32/canard_stm32.c ****      * CAN2 filters are offset by 14.
+ 247:libcanard/drivers/stm32/canard_stm32.c ****      * We use 14 filters at most always which simplifies the code and ensures compatibility with al
+ 248:libcanard/drivers/stm32/canard_stm32.c ****      * MCU within the STM32 family.
+ 249:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 250:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 251:libcanard/drivers/stm32/canard_stm32.c ****         uint32_t fmr = CANARD_STM32_CAN1->FMR & 0xFFFFC0F1U;
+ 497              		.loc 1 251 0
+ 498 00da 364A     		ldr	r2, .L61+8
+ 499 00dc D2F80032 		ldr	r3, [r2, #512]
+ 500 00e0 23F47C53 		bic	r3, r3, #16128
+ 501 00e4 23F00E03 		bic	r3, r3, #14
+ 502              	.LVL46:
+ 252:libcanard/drivers/stm32/canard_stm32.c ****         fmr |= CANARD_STM32_NUM_ACCEPTANCE_FILTERS << 8U;                // CAN2 start bank = 14 (i
+ 253:libcanard/drivers/stm32/canard_stm32.c ****         CANARD_STM32_CAN1->FMR = fmr | CANARD_STM32_CAN_FMR_FINIT;
+ 503              		.loc 1 253 0
+ 504 00e8 43F46063 		orr	r3, r3, #3584
+ 505              	.LVL47:
+ 506 00ec 43F00103 		orr	r3, r3, #1
+ 507              	.LVL48:
+ 508 00f0 C2F80032 		str	r3, [r2, #512]
+ 509              	.LBE9:
+ 254:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 255:libcanard/drivers/stm32/canard_stm32.c **** 
+ 256:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_ASSERT(((CANARD_STM32_CAN1->FMR >> 8U) & 0x3FU) == CANARD_STM32_NUM_ACCEPTANCE_FILTERS);
+ 510              		.loc 1 256 0
+ 511 00f4 D2F80032 		ldr	r3, [r2, #512]
+ 512 00f8 C3F30523 		ubfx	r3, r3, #8, #6
+ 513 00fc 0E2B     		cmp	r3, #14
+ 514 00fe 2FD1     		bne	.L60
+ 257:libcanard/drivers/stm32/canard_stm32.c **** 
+ 258:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FM1R = 0;                                        // Indentifier Mask mode
+ 515              		.loc 1 258 0
+ 516 0100 2C4B     		ldr	r3, .L61+8
+ 517 0102 0020     		movs	r0, #0
+ 518 0104 C3F80402 		str	r0, [r3, #516]
+ 259:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FS1R = 0x0FFFFFFF;                               // All 32-bit
+ 519              		.loc 1 259 0
+ARM GAS  /tmp/ccUExmKF.s 			page 15
+
+
+ 520 0108 6FF07042 		mvn	r2, #-268435456
+ 521 010c C3F80C22 		str	r2, [r3, #524]
+ 260:libcanard/drivers/stm32/canard_stm32.c **** 
+ 261:libcanard/drivers/stm32/canard_stm32.c ****     // Filters are alternating between FIFO0 and FIFO1 in order to equalize the load.
+ 262:libcanard/drivers/stm32/canard_stm32.c ****     // This will cause occasional priority inversion and frame reordering on reception,
+ 263:libcanard/drivers/stm32/canard_stm32.c ****     // but that is acceptable for UAVCAN, and a majority of other protocols will tolerate
+ 264:libcanard/drivers/stm32/canard_stm32.c ****     // this too, since there will be no reordering within the same CAN ID.
+ 265:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FFA1R = 0x0AAAAAAA;
+ 522              		.loc 1 265 0
+ 523 0110 294A     		ldr	r2, .L61+12
+ 524 0112 C3F81422 		str	r2, [r3, #532]
+ 266:libcanard/drivers/stm32/canard_stm32.c **** 
+ 267:libcanard/drivers/stm32/canard_stm32.c **** #if CANARD_STM32_USE_CAN2
+ 268:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FilterRegister[CANARD_STM32_NUM_ACCEPTANCE_FILTERS].FR1 = 0;
+ 269:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FilterRegister[CANARD_STM32_NUM_ACCEPTANCE_FILTERS].FR2 = 0;
+ 270:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FA1R = (1 << CANARD_STM32_NUM_ACCEPTANCE_FILTERS);  // One filter enabled
+ 271:libcanard/drivers/stm32/canard_stm32.c **** #else
+ 272:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FilterRegister[0].FR1 = 0;
+ 525              		.loc 1 272 0
+ 526 0116 C3F84002 		str	r0, [r3, #576]
+ 273:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FilterRegister[0].FR2 = 0;
+ 527              		.loc 1 273 0
+ 528 011a C3F84402 		str	r0, [r3, #580]
+ 274:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FA1R = 1;                                        // One filter enabled
+ 529              		.loc 1 274 0
+ 530 011e 0122     		movs	r2, #1
+ 531 0120 C3F81C22 		str	r2, [r3, #540]
+ 275:libcanard/drivers/stm32/canard_stm32.c **** #endif
+ 276:libcanard/drivers/stm32/canard_stm32.c **** 
+ 277:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FMR &= ~CANARD_STM32_CAN_FMR_FINIT;              // Leave initialization mod
+ 532              		.loc 1 277 0
+ 533 0124 D3F80022 		ldr	r2, [r3, #512]
+ 534 0128 22F00102 		bic	r2, r2, #1
+ 535 012c C3F80022 		str	r2, [r3, #512]
+ 278:libcanard/drivers/stm32/canard_stm32.c **** 
+ 279:libcanard/drivers/stm32/canard_stm32.c ****     return 0;
+ 536              		.loc 1 279 0
+ 537 0130 38BD     		pop	{r3, r4, r5, pc}
+ 538              	.LVL49:
+ 539              	.L56:
+ 219:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_MSR_INAK_NOT_SET;
+ 540              		.loc 1 219 0
+ 541 0132 4FF40042 		mov	r2, #32768
+ 542 0136 1F4B     		ldr	r3, .L61+8
+ 543 0138 1A60     		str	r2, [r3]
+ 220:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 544              		.loc 1 220 0
+ 545 013a 6FF47A70 		mvn	r0, #1000
+ 546 013e 38BD     		pop	{r3, r4, r5, pc}
+ 547              	.LVL50:
+ 548              	.L57:
+ 232:libcanard/drivers/stm32/canard_stm32.c **** 
+ 549              		.loc 1 232 0
+ 550 0140 4FF00042 		mov	r2, #-2147483648
+ 551 0144 B9E7     		b	.L37
+ 552              	.L58:
+ 234:libcanard/drivers/stm32/canard_stm32.c **** 
+ARM GAS  /tmp/ccUExmKF.s 			page 16
+
+
+ 553              		.loc 1 234 0 discriminator 1
+ 554 0146 1D4B     		ldr	r3, .L61+16
+ 555 0148 1D4A     		ldr	r2, .L61+20
+ 556 014a EA21     		movs	r1, #234
+ 557 014c 1D48     		ldr	r0, .L61+24
+ 558 014e FFF7FEFF 		bl	__assert_func
+ 559              	.LVL51:
+ 560              	.L59:
+ 240:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_MSR_INAK_NOT_CLEARED;
+ 561              		.loc 1 240 0
+ 562 0152 4FF40042 		mov	r2, #32768
+ 563 0156 174B     		ldr	r3, .L61+8
+ 564 0158 1A60     		str	r2, [r3]
+ 241:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 565              		.loc 1 241 0
+ 566 015a A0F2EA30 		subw	r0, r0, #1002
+ 567 015e 38BD     		pop	{r3, r4, r5, pc}
+ 568              	.LVL52:
+ 569              	.L60:
+ 256:libcanard/drivers/stm32/canard_stm32.c **** 
+ 570              		.loc 1 256 0 discriminator 1
+ 571 0160 194B     		ldr	r3, .L61+28
+ 572 0162 174A     		ldr	r2, .L61+20
+ 573 0164 4FF48071 		mov	r1, #256
+ 574 0168 1648     		ldr	r0, .L61+24
+ 575 016a FFF7FEFF 		bl	__assert_func
+ 576              	.LVL53:
+ 577              	.L41:
+ 578              	.LCFI5:
+ 579              		.cfi_def_cfa_offset 0
+ 580              		.cfi_restore 3
+ 581              		.cfi_restore 4
+ 582              		.cfi_restore 5
+ 583              		.cfi_restore 14
+ 180:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 584              		.loc 1 180 0
+ 585 016e 6FF00100 		mvn	r0, #1
+ 586              	.LVL54:
+ 587 0172 7047     		bx	lr
+ 588              	.LVL55:
+ 589              	.L42:
+ 189:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 590              		.loc 1 189 0
+ 591 0174 6FF00100 		mvn	r0, #1
+ 592              	.LVL56:
+ 593 0178 7047     		bx	lr
+ 594              	.LVL57:
+ 595              	.L43:
+ 596              	.LCFI6:
+ 597              		.cfi_def_cfa_offset 16
+ 598              		.cfi_offset 3, -16
+ 599              		.cfi_offset 4, -12
+ 600              		.cfi_offset 5, -8
+ 601              		.cfi_offset 14, -4
+ 602 017a 6FF00100 		mvn	r0, #1
+ 603              	.LVL58:
+ 604 017e 38BD     		pop	{r3, r4, r5, pc}
+ARM GAS  /tmp/ccUExmKF.s 			page 17
+
+
+ 605              	.LVL59:
+ 606              	.L44:
+ 607 0180 6FF00100 		mvn	r0, #1
+ 608              	.LVL60:
+ 609 0184 38BD     		pop	{r3, r4, r5, pc}
+ 610              	.LVL61:
+ 611              	.L45:
+ 612 0186 6FF00100 		mvn	r0, #1
+ 613              	.LVL62:
+ 614 018a 38BD     		pop	{r3, r4, r5, pc}
+ 615              	.LVL63:
+ 616              	.L46:
+ 617 018c 6FF00100 		mvn	r0, #1
+ 618              	.LVL64:
+ 619 0190 38BD     		pop	{r3, r4, r5, pc}
+ 620              	.LVL65:
+ 621              	.L47:
+ 622 0192 6FF00100 		mvn	r0, #1
+ 623              	.LVL66:
+ 624 0196 38BD     		pop	{r3, r4, r5, pc}
+ 625              	.LVL67:
+ 626              	.L48:
+ 627 0198 6FF00100 		mvn	r0, #1
+ 628              	.LVL68:
+ 629 019c 38BD     		pop	{r3, r4, r5, pc}
+ 630              	.LVL69:
+ 631              	.L49:
+ 632 019e 6FF00100 		mvn	r0, #1
+ 633              	.LVL70:
+ 634 01a2 38BD     		pop	{r3, r4, r5, pc}
+ 635              	.LVL71:
+ 636              	.L50:
+ 637 01a4 6FF00100 		mvn	r0, #1
+ 638              	.LVL72:
+ 280:libcanard/drivers/stm32/canard_stm32.c **** }
+ 639              		.loc 1 280 0
+ 640 01a8 38BD     		pop	{r3, r4, r5, pc}
+ 641              	.L62:
+ 642 01aa 00BF     		.align	2
+ 643              	.L61:
+ 644 01ac 00000000 		.word	.LANCHOR0
+ 645 01b0 00000000 		.word	.LANCHOR1
+ 646 01b4 00640040 		.word	1073767424
+ 647 01b8 AAAAAA0A 		.word	178956970
+ 648 01bc 00000000 		.word	.LC0
+ 649 01c0 00000000 		.word	.LANCHOR2
+ 650 01c4 38000000 		.word	.LC1
+ 651 01c8 60000000 		.word	.LC2
+ 652              		.cfi_endproc
+ 653              	.LFE70:
+ 655              		.section	.text.canardSTM32Transmit,"ax",%progbits
+ 656              		.align	1
+ 657              		.global	canardSTM32Transmit
+ 658              		.syntax unified
+ 659              		.thumb
+ 660              		.thumb_func
+ 661              		.fpu softvfp
+ARM GAS  /tmp/ccUExmKF.s 			page 18
+
+
+ 663              	canardSTM32Transmit:
+ 664              	.LFB71:
+ 281:libcanard/drivers/stm32/canard_stm32.c **** 
+ 282:libcanard/drivers/stm32/canard_stm32.c **** 
+ 283:libcanard/drivers/stm32/canard_stm32.c **** int16_t canardSTM32Transmit(const CanardCANFrame* const frame)
+ 284:libcanard/drivers/stm32/canard_stm32.c **** {
+ 665              		.loc 1 284 0
+ 666              		.cfi_startproc
+ 667              		@ args = 0, pretend = 0, frame = 8
+ 668              		@ frame_needed = 0, uses_anonymous_args = 0
+ 669              	.LVL73:
+ 285:libcanard/drivers/stm32/canard_stm32.c ****     if (frame == NULL)
+ 670              		.loc 1 285 0
+ 671 0000 0028     		cmp	r0, #0
+ 672 0002 75D0     		beq	.L71
+ 284:libcanard/drivers/stm32/canard_stm32.c ****     if (frame == NULL)
+ 673              		.loc 1 284 0
+ 674 0004 70B5     		push	{r4, r5, r6, lr}
+ 675              	.LCFI7:
+ 676              		.cfi_def_cfa_offset 16
+ 677              		.cfi_offset 4, -16
+ 678              		.cfi_offset 5, -12
+ 679              		.cfi_offset 6, -8
+ 680              		.cfi_offset 14, -4
+ 681 0006 82B0     		sub	sp, sp, #8
+ 682              	.LCFI8:
+ 683              		.cfi_def_cfa_offset 24
+ 684 0008 0546     		mov	r5, r0
+ 286:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 287:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_ERROR_INVALID_ARGUMENT;
+ 288:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 289:libcanard/drivers/stm32/canard_stm32.c **** 
+ 290:libcanard/drivers/stm32/canard_stm32.c ****     if (frame->id & CANARD_CAN_FRAME_ERR)
+ 685              		.loc 1 290 0
+ 686 000a 0368     		ldr	r3, [r0]
+ 687 000c 13F0005F 		tst	r3, #536870912
+ 688 0010 71D1     		bne	.L72
+ 291:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 292:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_STM32_ERROR_UNSUPPORTED_FRAME_FORMAT;
+ 293:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 294:libcanard/drivers/stm32/canard_stm32.c **** 
+ 295:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 296:libcanard/drivers/stm32/canard_stm32.c ****      * Handling error status might free up some slots through aborts
+ 297:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 298:libcanard/drivers/stm32/canard_stm32.c ****     processErrorStatus();
+ 689              		.loc 1 298 0
+ 690 0012 FFF7FEFF 		bl	processErrorStatus
+ 691              	.LVL74:
+ 299:libcanard/drivers/stm32/canard_stm32.c **** 
+ 300:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 301:libcanard/drivers/stm32/canard_stm32.c ****      * Seeking an empty slot, checking if priority inversion would occur if we enqueued now.
+ 302:libcanard/drivers/stm32/canard_stm32.c ****      * We can always enqueue safely if all TX mailboxes are free and no transmissions are pending.
+ 303:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 304:libcanard/drivers/stm32/canard_stm32.c ****     uint8_t tx_mailbox = 0xFF;
+ 305:libcanard/drivers/stm32/canard_stm32.c **** 
+ 306:libcanard/drivers/stm32/canard_stm32.c ****     static const uint32_t AllTME = CANARD_STM32_CAN_TSR_TME0 | CANARD_STM32_CAN_TSR_TME1 | CANARD_S
+ 307:libcanard/drivers/stm32/canard_stm32.c **** 
+ARM GAS  /tmp/ccUExmKF.s 			page 19
+
+
+ 308:libcanard/drivers/stm32/canard_stm32.c ****     if ((BXCAN->TSR & AllTME) != AllTME)                // At least one TX mailbox is used, detaile
+ 692              		.loc 1 308 0
+ 693 0016 394B     		ldr	r3, .L82
+ 694 0018 9B68     		ldr	r3, [r3, #8]
+ 695 001a 03F0E053 		and	r3, r3, #469762048
+ 696 001e B3F1E05F 		cmp	r3, #469762048
+ 697 0022 5CD0     		beq	.L73
+ 698              	.LBB10:
+ 309:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 310:libcanard/drivers/stm32/canard_stm32.c ****         const bool tme[3] =
+ 311:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 312:libcanard/drivers/stm32/canard_stm32.c ****             (BXCAN->TSR & CANARD_STM32_CAN_TSR_TME0) != 0,
+ 699              		.loc 1 312 0
+ 700 0024 354B     		ldr	r3, .L82
+ 701 0026 9A68     		ldr	r2, [r3, #8]
+ 702 0028 C2F38062 		ubfx	r2, r2, #26, #1
+ 310:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 703              		.loc 1 310 0
+ 704 002c 8DF80420 		strb	r2, [sp, #4]
+ 313:libcanard/drivers/stm32/canard_stm32.c ****             (BXCAN->TSR & CANARD_STM32_CAN_TSR_TME1) != 0,
+ 705              		.loc 1 313 0
+ 706 0030 9A68     		ldr	r2, [r3, #8]
+ 707 0032 C2F3C062 		ubfx	r2, r2, #27, #1
+ 310:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 708              		.loc 1 310 0
+ 709 0036 8DF80520 		strb	r2, [sp, #5]
+ 314:libcanard/drivers/stm32/canard_stm32.c ****             (BXCAN->TSR & CANARD_STM32_CAN_TSR_TME2) != 0
+ 710              		.loc 1 314 0
+ 711 003a 9B68     		ldr	r3, [r3, #8]
+ 712 003c C3F30073 		ubfx	r3, r3, #28, #1
+ 310:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 713              		.loc 1 310 0
+ 714 0040 8DF80630 		strb	r3, [sp, #6]
+ 715              	.LVL75:
+ 716              	.LBB11:
+ 315:libcanard/drivers/stm32/canard_stm32.c ****         };
+ 316:libcanard/drivers/stm32/canard_stm32.c **** 
+ 317:libcanard/drivers/stm32/canard_stm32.c ****         for (uint8_t i = 0; i < 3; i++)
+ 717              		.loc 1 317 0
+ 718 0044 0024     		movs	r4, #0
+ 719              	.LBE11:
+ 720              	.LBE10:
+ 304:libcanard/drivers/stm32/canard_stm32.c **** 
+ 721              		.loc 1 304 0
+ 722 0046 FF26     		movs	r6, #255
+ 723              	.LBB13:
+ 724              	.LBB12:
+ 725              		.loc 1 317 0
+ 726 0048 02E0     		b	.L66
+ 727              	.LVL76:
+ 728              	.L74:
+ 318:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 319:libcanard/drivers/stm32/canard_stm32.c ****             if (tme[i])                                 // This TX mailbox is free, we can use it
+ 320:libcanard/drivers/stm32/canard_stm32.c ****             {
+ 321:libcanard/drivers/stm32/canard_stm32.c ****                 tx_mailbox = i;
+ 729              		.loc 1 321 0
+ 730 004a 2646     		mov	r6, r4
+ARM GAS  /tmp/ccUExmKF.s 			page 20
+
+
+ 731              	.LVL77:
+ 732              	.L67:
+ 317:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 733              		.loc 1 317 0 discriminator 2
+ 734 004c 0134     		adds	r4, r4, #1
+ 735              	.LVL78:
+ 736 004e E4B2     		uxtb	r4, r4
+ 737              	.LVL79:
+ 738              	.L66:
+ 317:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 739              		.loc 1 317 0 is_stmt 0 discriminator 1
+ 740 0050 022C     		cmp	r4, #2
+ 741 0052 13D8     		bhi	.L79
+ 319:libcanard/drivers/stm32/canard_stm32.c ****             {
+ 742              		.loc 1 319 0 is_stmt 1
+ 743 0054 02AB     		add	r3, sp, #8
+ 744 0056 2344     		add	r3, r3, r4
+ 745 0058 13F8043C 		ldrb	r3, [r3, #-4]	@ zero_extendqisi2
+ 746 005c 002B     		cmp	r3, #0
+ 747 005e F4D1     		bne	.L74
+ 322:libcanard/drivers/stm32/canard_stm32.c ****             }
+ 323:libcanard/drivers/stm32/canard_stm32.c ****             else                                        // This TX mailbox is pending, check for pr
+ 324:libcanard/drivers/stm32/canard_stm32.c ****             {
+ 325:libcanard/drivers/stm32/canard_stm32.c ****                 if (!isFramePriorityHigher(frame->id, convertFrameIDRegisterToCanard(BXCAN->TxMailb
+ 748              		.loc 1 325 0
+ 749 0060 04F11803 		add	r3, r4, #24
+ 750 0064 1B01     		lsls	r3, r3, #4
+ 751 0066 254A     		ldr	r2, .L82
+ 752 0068 D058     		ldr	r0, [r2, r3]
+ 753 006a FFF7FEFF 		bl	convertFrameIDRegisterToCanard
+ 754              	.LVL80:
+ 755 006e 0146     		mov	r1, r0
+ 756 0070 2868     		ldr	r0, [r5]
+ 757 0072 FFF7FEFF 		bl	isFramePriorityHigher
+ 758              	.LVL81:
+ 759 0076 0028     		cmp	r0, #0
+ 760 0078 E8D1     		bne	.L67
+ 761 007a 27E0     		b	.L64
+ 762              	.L79:
+ 763              	.LBE12:
+ 326:libcanard/drivers/stm32/canard_stm32.c ****                 {
+ 327:libcanard/drivers/stm32/canard_stm32.c ****                     // There's a mailbox whose priority is higher or equal the priority of the new 
+ 328:libcanard/drivers/stm32/canard_stm32.c ****                     return 0;                           // Priority inversion would occur! Reject t
+ 329:libcanard/drivers/stm32/canard_stm32.c ****                 }
+ 330:libcanard/drivers/stm32/canard_stm32.c ****             }
+ 331:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 332:libcanard/drivers/stm32/canard_stm32.c **** 
+ 333:libcanard/drivers/stm32/canard_stm32.c ****         if (tx_mailbox == 0xFF)
+ 764              		.loc 1 333 0
+ 765 007c FF2E     		cmp	r6, #255
+ 766 007e 27D0     		beq	.L80
+ 767              	.LVL82:
+ 768              	.L65:
+ 769              	.LBE13:
+ 334:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 335:libcanard/drivers/stm32/canard_stm32.c ****             /*
+ 336:libcanard/drivers/stm32/canard_stm32.c ****              * All TX mailboxes are busy (this is highly unlikely); at the same time we know that t
+ARM GAS  /tmp/ccUExmKF.s 			page 21
+
+
+ 337:libcanard/drivers/stm32/canard_stm32.c ****              * higher or equal priority frame that is currently pending. Therefore, priority invers
+ 338:libcanard/drivers/stm32/canard_stm32.c ****              * just happend (sic!), because we can't enqueue the higher priority frame due to all T
+ 339:libcanard/drivers/stm32/canard_stm32.c ****              * being busy. This scenario is extremely unlikely, because in order for it to happen, 
+ 340:libcanard/drivers/stm32/canard_stm32.c ****              * would need to transmit 4 (four) or more CAN frames with different CAN ID ordered fro
+ 341:libcanard/drivers/stm32/canard_stm32.c ****              * low ID nearly at the same time. For example:
+ 342:libcanard/drivers/stm32/canard_stm32.c ****              *  1. 0x123        <-- Takes mailbox 0 (or any other)
+ 343:libcanard/drivers/stm32/canard_stm32.c ****              *  2. 0x122        <-- Takes mailbox 2 (or any other)
+ 344:libcanard/drivers/stm32/canard_stm32.c ****              *  3. 0x121        <-- Takes mailbox 1 (or any other)
+ 345:libcanard/drivers/stm32/canard_stm32.c ****              *  4. 0x120        <-- INNER PRIORITY INVERSION HERE (only if all three TX mailboxes a
+ 346:libcanard/drivers/stm32/canard_stm32.c ****              * This situation is even less likely to cause any noticeable disruptions on the CAN bu
+ 347:libcanard/drivers/stm32/canard_stm32.c ****              * it is better to warn the developer about that during debugging, so we fire an assert
+ 348:libcanard/drivers/stm32/canard_stm32.c ****              * It is perfectly safe to remove it.
+ 349:libcanard/drivers/stm32/canard_stm32.c ****              */
+ 350:libcanard/drivers/stm32/canard_stm32.c **** #if CANARD_STM32_DEBUG_INNER_PRIORITY_INVERSION
+ 351:libcanard/drivers/stm32/canard_stm32.c ****             CANARD_ASSERT(!"CAN PRIO INV");
+ 352:libcanard/drivers/stm32/canard_stm32.c **** #endif
+ 353:libcanard/drivers/stm32/canard_stm32.c ****             return 0;
+ 354:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 355:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 356:libcanard/drivers/stm32/canard_stm32.c ****     else                                                // All TX mailboxes are free, use first
+ 357:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 358:libcanard/drivers/stm32/canard_stm32.c ****         tx_mailbox = 0;
+ 359:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 360:libcanard/drivers/stm32/canard_stm32.c **** 
+ 361:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_ASSERT(tx_mailbox < 3);                      // Index check - the value must be correct 
+ 770              		.loc 1 361 0
+ 771 0080 022E     		cmp	r6, #2
+ 772 0082 2ED8     		bhi	.L81
+ 362:libcanard/drivers/stm32/canard_stm32.c **** 
+ 363:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 364:libcanard/drivers/stm32/canard_stm32.c ****      * By this time we've proved that a priority inversion would not occur, and we've also found a 
+ 365:libcanard/drivers/stm32/canard_stm32.c ****      * Therefore it is safe to enqueue the frame now.
+ 366:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 367:libcanard/drivers/stm32/canard_stm32.c ****     volatile CanardSTM32TxMailboxType* const mb = &BXCAN->TxMailbox[tx_mailbox];
+ 773              		.loc 1 367 0
+ 774 0084 3401     		lsls	r4, r6, #4
+ 775 0086 04F18044 		add	r4, r4, #1073741824
+ 776 008a 04F5CB44 		add	r4, r4, #25984
+ 777              	.LVL83:
+ 368:libcanard/drivers/stm32/canard_stm32.c **** 
+ 369:libcanard/drivers/stm32/canard_stm32.c ****     mb->TDTR = frame->data_len;                         // DLC equals data length except in CAN FD
+ 778              		.loc 1 369 0
+ 779 008e 2B7B     		ldrb	r3, [r5, #12]	@ zero_extendqisi2
+ 780 0090 6360     		str	r3, [r4, #4]
+ 370:libcanard/drivers/stm32/canard_stm32.c **** 
+ 371:libcanard/drivers/stm32/canard_stm32.c ****     mb->TDHR = (((uint32_t)frame->data[7]) << 24U) |
+ 781              		.loc 1 371 0
+ 782 0092 EA7A     		ldrb	r2, [r5, #11]	@ zero_extendqisi2
+ 372:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[6]) << 16U) |
+ 783              		.loc 1 372 0
+ 784 0094 AB7A     		ldrb	r3, [r5, #10]	@ zero_extendqisi2
+ 785 0096 1B04     		lsls	r3, r3, #16
+ 371:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[6]) << 16U) |
+ 786              		.loc 1 371 0
+ 787 0098 43EA0263 		orr	r3, r3, r2, lsl #24
+ 373:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[5]) <<  8U) |
+ 788              		.loc 1 373 0
+ARM GAS  /tmp/ccUExmKF.s 			page 22
+
+
+ 789 009c 6A7A     		ldrb	r2, [r5, #9]	@ zero_extendqisi2
+ 372:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[6]) << 16U) |
+ 790              		.loc 1 372 0
+ 791 009e 43EA0223 		orr	r3, r3, r2, lsl #8
+ 374:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[4]) <<  0U);
+ 792              		.loc 1 374 0
+ 793 00a2 2A7A     		ldrb	r2, [r5, #8]	@ zero_extendqisi2
+ 373:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[5]) <<  8U) |
+ 794              		.loc 1 373 0
+ 795 00a4 1343     		orrs	r3, r3, r2
+ 371:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[6]) << 16U) |
+ 796              		.loc 1 371 0
+ 797 00a6 E360     		str	r3, [r4, #12]
+ 375:libcanard/drivers/stm32/canard_stm32.c ****     mb->TDLR = (((uint32_t)frame->data[3]) << 24U) |
+ 798              		.loc 1 375 0
+ 799 00a8 EA79     		ldrb	r2, [r5, #7]	@ zero_extendqisi2
+ 376:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[2]) << 16U) |
+ 800              		.loc 1 376 0
+ 801 00aa AB79     		ldrb	r3, [r5, #6]	@ zero_extendqisi2
+ 802 00ac 1B04     		lsls	r3, r3, #16
+ 375:libcanard/drivers/stm32/canard_stm32.c ****     mb->TDLR = (((uint32_t)frame->data[3]) << 24U) |
+ 803              		.loc 1 375 0
+ 804 00ae 43EA0263 		orr	r3, r3, r2, lsl #24
+ 377:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[1]) <<  8U) |
+ 805              		.loc 1 377 0
+ 806 00b2 6A79     		ldrb	r2, [r5, #5]	@ zero_extendqisi2
+ 376:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[2]) << 16U) |
+ 807              		.loc 1 376 0
+ 808 00b4 43EA0223 		orr	r3, r3, r2, lsl #8
+ 378:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[0]) <<  0U);
+ 809              		.loc 1 378 0
+ 810 00b8 2A79     		ldrb	r2, [r5, #4]	@ zero_extendqisi2
+ 377:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[1]) <<  8U) |
+ 811              		.loc 1 377 0
+ 812 00ba 1343     		orrs	r3, r3, r2
+ 375:libcanard/drivers/stm32/canard_stm32.c ****                (((uint32_t)frame->data[2]) << 16U) |
+ 813              		.loc 1 375 0
+ 814 00bc A360     		str	r3, [r4, #8]
+ 379:libcanard/drivers/stm32/canard_stm32.c **** 
+ 380:libcanard/drivers/stm32/canard_stm32.c ****     mb->TIR = convertFrameIDCanardToRegister(frame->id) | CANARD_STM32_CAN_TIR_TXRQ;    // Go.
+ 815              		.loc 1 380 0
+ 816 00be 2868     		ldr	r0, [r5]
+ 817 00c0 FFF7FEFF 		bl	convertFrameIDCanardToRegister
+ 818              	.LVL84:
+ 819 00c4 40F00100 		orr	r0, r0, #1
+ 820 00c8 2060     		str	r0, [r4]
+ 381:libcanard/drivers/stm32/canard_stm32.c **** 
+ 382:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 383:libcanard/drivers/stm32/canard_stm32.c ****      * The frame is now enqueued and pending transmission.
+ 384:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 385:libcanard/drivers/stm32/canard_stm32.c ****     return 1;
+ 821              		.loc 1 385 0
+ 822 00ca 0120     		movs	r0, #1
+ 823              	.LVL85:
+ 824              	.L64:
+ 386:libcanard/drivers/stm32/canard_stm32.c **** }
+ 825              		.loc 1 386 0
+ARM GAS  /tmp/ccUExmKF.s 			page 23
+
+
+ 826 00cc 02B0     		add	sp, sp, #8
+ 827              	.LCFI9:
+ 828              		.cfi_remember_state
+ 829              		.cfi_def_cfa_offset 16
+ 830              		@ sp needed
+ 831 00ce 70BD     		pop	{r4, r5, r6, pc}
+ 832              	.LVL86:
+ 833              	.L80:
+ 834              	.LCFI10:
+ 835              		.cfi_restore_state
+ 836              	.LBB14:
+ 351:libcanard/drivers/stm32/canard_stm32.c **** #endif
+ 837              		.loc 1 351 0
+ 838 00d0 0B4B     		ldr	r3, .L82+4
+ 839 00d2 0C4A     		ldr	r2, .L82+8
+ 840 00d4 40F25F11 		movw	r1, #351
+ 841 00d8 0B48     		ldr	r0, .L82+12
+ 842 00da FFF7FEFF 		bl	__assert_func
+ 843              	.LVL87:
+ 844              	.L73:
+ 845              	.LBE14:
+ 358:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 846              		.loc 1 358 0
+ 847 00de 0026     		movs	r6, #0
+ 848 00e0 CEE7     		b	.L65
+ 849              	.LVL88:
+ 850              	.L81:
+ 361:libcanard/drivers/stm32/canard_stm32.c **** 
+ 851              		.loc 1 361 0 discriminator 1
+ 852 00e2 0A4B     		ldr	r3, .L82+16
+ 853 00e4 074A     		ldr	r2, .L82+8
+ 854 00e6 40F26911 		movw	r1, #361
+ 855 00ea 0748     		ldr	r0, .L82+12
+ 856 00ec FFF7FEFF 		bl	__assert_func
+ 857              	.LVL89:
+ 858              	.L71:
+ 859              	.LCFI11:
+ 860              		.cfi_def_cfa_offset 0
+ 861              		.cfi_restore 4
+ 862              		.cfi_restore 5
+ 863              		.cfi_restore 6
+ 864              		.cfi_restore 14
+ 287:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 865              		.loc 1 287 0
+ 866 00f0 6FF00100 		mvn	r0, #1
+ 867              	.LVL90:
+ 868 00f4 7047     		bx	lr
+ 869              	.LVL91:
+ 870              	.L72:
+ 871              	.LCFI12:
+ 872              		.cfi_def_cfa_offset 24
+ 873              		.cfi_offset 4, -16
+ 874              		.cfi_offset 5, -12
+ 875              		.cfi_offset 6, -8
+ 876              		.cfi_offset 14, -4
+ 292:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 877              		.loc 1 292 0
+ARM GAS  /tmp/ccUExmKF.s 			page 24
+
+
+ 878 00f6 0648     		ldr	r0, .L82+20
+ 879              	.LVL92:
+ 880 00f8 E8E7     		b	.L64
+ 881              	.L83:
+ 882 00fa 00BF     		.align	2
+ 883              	.L82:
+ 884 00fc 00640040 		.word	1073767424
+ 885 0100 00000000 		.word	.LC3
+ 886 0104 00000000 		.word	.LANCHOR3
+ 887 0108 38000000 		.word	.LC1
+ 888 010c 10000000 		.word	.LC4
+ 889 0110 15FCFFFF 		.word	-1003
+ 890              		.cfi_endproc
+ 891              	.LFE71:
+ 893              		.section	.text.canardSTM32Receive,"ax",%progbits
+ 894              		.align	1
+ 895              		.global	canardSTM32Receive
+ 896              		.syntax unified
+ 897              		.thumb
+ 898              		.thumb_func
+ 899              		.fpu softvfp
+ 901              	canardSTM32Receive:
+ 902              	.LFB72:
+ 387:libcanard/drivers/stm32/canard_stm32.c **** 
+ 388:libcanard/drivers/stm32/canard_stm32.c **** 
+ 389:libcanard/drivers/stm32/canard_stm32.c **** int16_t canardSTM32Receive(CanardCANFrame* const out_frame)
+ 390:libcanard/drivers/stm32/canard_stm32.c **** {
+ 903              		.loc 1 390 0
+ 904              		.cfi_startproc
+ 905              		@ args = 0, pretend = 0, frame = 0
+ 906              		@ frame_needed = 0, uses_anonymous_args = 0
+ 907              	.LVL93:
+ 391:libcanard/drivers/stm32/canard_stm32.c ****     if (out_frame == NULL)
+ 908              		.loc 1 391 0
+ 909 0000 0028     		cmp	r0, #0
+ 910 0002 40D0     		beq	.L90
+ 390:libcanard/drivers/stm32/canard_stm32.c ****     if (out_frame == NULL)
+ 911              		.loc 1 390 0
+ 912 0004 70B5     		push	{r4, r5, r6, lr}
+ 913              	.LCFI13:
+ 914              		.cfi_def_cfa_offset 16
+ 915              		.cfi_offset 4, -16
+ 916              		.cfi_offset 5, -12
+ 917              		.cfi_offset 6, -8
+ 918              		.cfi_offset 14, -4
+ 919 0006 0646     		mov	r6, r0
+ 392:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 393:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_ERROR_INVALID_ARGUMENT;
+ 394:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 395:libcanard/drivers/stm32/canard_stm32.c **** 
+ 396:libcanard/drivers/stm32/canard_stm32.c ****     static volatile uint32_t* const RFxR[2] =
+ 397:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 398:libcanard/drivers/stm32/canard_stm32.c ****         &BXCAN->RF0R,
+ 399:libcanard/drivers/stm32/canard_stm32.c ****         &BXCAN->RF1R
+ 400:libcanard/drivers/stm32/canard_stm32.c ****     };
+ 401:libcanard/drivers/stm32/canard_stm32.c **** 
+ 402:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ARM GAS  /tmp/ccUExmKF.s 			page 25
+
+
+ 403:libcanard/drivers/stm32/canard_stm32.c ****      * This function must be polled periodically, so we use this opportunity to do it.
+ 404:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 405:libcanard/drivers/stm32/canard_stm32.c ****     processErrorStatus();
+ 920              		.loc 1 405 0
+ 921 0008 FFF7FEFF 		bl	processErrorStatus
+ 922              	.LVL94:
+ 923              	.LBB15:
+ 406:libcanard/drivers/stm32/canard_stm32.c **** 
+ 407:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 408:libcanard/drivers/stm32/canard_stm32.c ****      * Reading the TX FIFO
+ 409:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 410:libcanard/drivers/stm32/canard_stm32.c ****     for (uint_fast8_t i = 0; i < 2; i++)
+ 924              		.loc 1 410 0
+ 925 000c 0023     		movs	r3, #0
+ 926              	.LVL95:
+ 927              	.L86:
+ 928              		.loc 1 410 0 is_stmt 0 discriminator 1
+ 929 000e 012B     		cmp	r3, #1
+ 930 0010 37D8     		bhi	.L95
+ 931              	.LBB16:
+ 411:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 412:libcanard/drivers/stm32/canard_stm32.c ****         volatile CanardSTM32RxMailboxType* const mb = &BXCAN->RxMailbox[i];
+ 932              		.loc 1 412 0 is_stmt 1
+ 933 0012 1E4C     		ldr	r4, .L97
+ 934 0014 04EB0314 		add	r4, r4, r3, lsl #4
+ 935              	.LVL96:
+ 413:libcanard/drivers/stm32/canard_stm32.c **** 
+ 414:libcanard/drivers/stm32/canard_stm32.c ****         if (((*RFxR[i]) & CANARD_STM32_CAN_RFR_FMP_MASK) != 0)
+ 936              		.loc 1 414 0
+ 937 0018 1D4A     		ldr	r2, .L97+4
+ 938 001a 52F82350 		ldr	r5, [r2, r3, lsl #2]
+ 939 001e 2A68     		ldr	r2, [r5]
+ 940 0020 12F0030F 		tst	r2, #3
+ 941 0024 01D1     		bne	.L96
+ 942              	.LBE16:
+ 410:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 943              		.loc 1 410 0 discriminator 2
+ 944 0026 0133     		adds	r3, r3, #1
+ 945              	.LVL97:
+ 946 0028 F1E7     		b	.L86
+ 947              	.L96:
+ 948              	.LBB18:
+ 949              	.LBB17:
+ 415:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 416:libcanard/drivers/stm32/canard_stm32.c ****             if (*RFxR[i] & CANARD_STM32_CAN_RFR_FOVR)
+ 950              		.loc 1 416 0
+ 951 002a 2B68     		ldr	r3, [r5]
+ 952              	.LVL98:
+ 953 002c 13F0100F 		tst	r3, #16
+ 954 0030 07D0     		beq	.L88
+ 417:libcanard/drivers/stm32/canard_stm32.c ****             {
+ 418:libcanard/drivers/stm32/canard_stm32.c ****                 g_stats.rx_overflow_count++;
+ 955              		.loc 1 418 0
+ 956 0032 1849     		ldr	r1, .L97+8
+ 957 0034 D1E90023 		ldrd	r2, [r1]
+ 958 0038 0132     		adds	r2, r2, #1
+ 959 003a 43F10003 		adc	r3, r3, #0
+ARM GAS  /tmp/ccUExmKF.s 			page 26
+
+
+ 960 003e C1E90023 		strd	r2, [r1]
+ 961              	.L88:
+ 419:libcanard/drivers/stm32/canard_stm32.c ****             }
+ 420:libcanard/drivers/stm32/canard_stm32.c **** 
+ 421:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->id = convertFrameIDRegisterToCanard(mb->RIR);
+ 962              		.loc 1 421 0
+ 963 0042 2068     		ldr	r0, [r4]
+ 964 0044 FFF7FEFF 		bl	convertFrameIDRegisterToCanard
+ 965              	.LVL99:
+ 966 0048 3060     		str	r0, [r6]
+ 422:libcanard/drivers/stm32/canard_stm32.c **** 
+ 423:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data_len = (uint8_t)(mb->RDTR & CANARD_STM32_CAN_RDTR_DLC_MASK);
+ 967              		.loc 1 423 0
+ 968 004a 6368     		ldr	r3, [r4, #4]
+ 969 004c 03F00F03 		and	r3, r3, #15
+ 970 0050 3373     		strb	r3, [r6, #12]
+ 424:libcanard/drivers/stm32/canard_stm32.c **** 
+ 425:libcanard/drivers/stm32/canard_stm32.c ****             // Caching to regular (non volatile) memory for faster reads
+ 426:libcanard/drivers/stm32/canard_stm32.c ****             const uint32_t rdlr = mb->RDLR;
+ 971              		.loc 1 426 0
+ 972 0052 A268     		ldr	r2, [r4, #8]
+ 973              	.LVL100:
+ 427:libcanard/drivers/stm32/canard_stm32.c ****             const uint32_t rdhr = mb->RDHR;
+ 974              		.loc 1 427 0
+ 975 0054 E368     		ldr	r3, [r4, #12]
+ 976              	.LVL101:
+ 428:libcanard/drivers/stm32/canard_stm32.c **** 
+ 429:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[0] = (uint8_t)(0xFFU & (rdlr >>  0U));
+ 977              		.loc 1 429 0
+ 978 0056 3271     		strb	r2, [r6, #4]
+ 430:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[1] = (uint8_t)(0xFFU & (rdlr >>  8U));
+ 979              		.loc 1 430 0
+ 980 0058 C2F30721 		ubfx	r1, r2, #8, #8
+ 981 005c 7171     		strb	r1, [r6, #5]
+ 431:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[2] = (uint8_t)(0xFFU & (rdlr >> 16U));
+ 982              		.loc 1 431 0
+ 983 005e C2F30741 		ubfx	r1, r2, #16, #8
+ 984 0062 B171     		strb	r1, [r6, #6]
+ 432:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[3] = (uint8_t)(0xFFU & (rdlr >> 24U));
+ 985              		.loc 1 432 0
+ 986 0064 120E     		lsrs	r2, r2, #24
+ 987              	.LVL102:
+ 988 0066 F271     		strb	r2, [r6, #7]
+ 433:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[4] = (uint8_t)(0xFFU & (rdhr >>  0U));
+ 989              		.loc 1 433 0
+ 990 0068 3372     		strb	r3, [r6, #8]
+ 434:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[5] = (uint8_t)(0xFFU & (rdhr >>  8U));
+ 991              		.loc 1 434 0
+ 992 006a C3F30722 		ubfx	r2, r3, #8, #8
+ 993 006e 7272     		strb	r2, [r6, #9]
+ 435:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[6] = (uint8_t)(0xFFU & (rdhr >> 16U));
+ 994              		.loc 1 435 0
+ 995 0070 C3F30742 		ubfx	r2, r3, #16, #8
+ 996 0074 B272     		strb	r2, [r6, #10]
+ 436:libcanard/drivers/stm32/canard_stm32.c ****             out_frame->data[7] = (uint8_t)(0xFFU & (rdhr >> 24U));
+ 997              		.loc 1 436 0
+ 998 0076 1B0E     		lsrs	r3, r3, #24
+ARM GAS  /tmp/ccUExmKF.s 			page 27
+
+
+ 999              	.LVL103:
+ 1000 0078 F372     		strb	r3, [r6, #11]
+ 437:libcanard/drivers/stm32/canard_stm32.c **** 
+ 438:libcanard/drivers/stm32/canard_stm32.c ****             // Release FIFO entry we just read
+ 439:libcanard/drivers/stm32/canard_stm32.c ****             *RFxR[i] = CANARD_STM32_CAN_RFR_RFOM | CANARD_STM32_CAN_RFR_FOVR | CANARD_STM32_CAN_RFR
+ 1001              		.loc 1 439 0
+ 1002 007a 3823     		movs	r3, #56
+ 1003 007c 2B60     		str	r3, [r5]
+ 440:libcanard/drivers/stm32/canard_stm32.c **** 
+ 441:libcanard/drivers/stm32/canard_stm32.c ****             // Reading successful
+ 442:libcanard/drivers/stm32/canard_stm32.c ****             return 1;
+ 1004              		.loc 1 442 0
+ 1005 007e 0120     		movs	r0, #1
+ 1006 0080 70BD     		pop	{r4, r5, r6, pc}
+ 1007              	.LVL104:
+ 1008              	.L95:
+ 1009              	.LBE17:
+ 1010              	.LBE18:
+ 1011              	.LBE15:
+ 443:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 444:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 445:libcanard/drivers/stm32/canard_stm32.c **** 
+ 446:libcanard/drivers/stm32/canard_stm32.c ****     // No frames to read
+ 447:libcanard/drivers/stm32/canard_stm32.c ****     return 0;
+ 1012              		.loc 1 447 0
+ 1013 0082 0020     		movs	r0, #0
+ 1014              	.LBB19:
+ 1015 0084 70BD     		pop	{r4, r5, r6, pc}
+ 1016              	.LVL105:
+ 1017              	.L90:
+ 1018              	.LCFI14:
+ 1019              		.cfi_def_cfa_offset 0
+ 1020              		.cfi_restore 4
+ 1021              		.cfi_restore 5
+ 1022              		.cfi_restore 6
+ 1023              		.cfi_restore 14
+ 1024              	.LBE19:
+ 393:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 1025              		.loc 1 393 0
+ 1026 0086 6FF00100 		mvn	r0, #1
+ 1027              	.LVL106:
+ 1028 008a 7047     		bx	lr
+ 1029              	.L98:
+ 1030              		.align	2
+ 1031              	.L97:
+ 1032 008c B0650040 		.word	1073767856
+ 1033 0090 00000000 		.word	.LANCHOR4
+ 1034 0094 00000000 		.word	.LANCHOR0
+ 1035              		.cfi_endproc
+ 1036              	.LFE72:
+ 1038              		.section	.text.canardSTM32ConfigureAcceptanceFilters,"ax",%progbits
+ 1039              		.align	1
+ 1040              		.global	canardSTM32ConfigureAcceptanceFilters
+ 1041              		.syntax unified
+ 1042              		.thumb
+ 1043              		.thumb_func
+ 1044              		.fpu softvfp
+ARM GAS  /tmp/ccUExmKF.s 			page 28
+
+
+ 1046              	canardSTM32ConfigureAcceptanceFilters:
+ 1047              	.LFB73:
+ 448:libcanard/drivers/stm32/canard_stm32.c **** }
+ 449:libcanard/drivers/stm32/canard_stm32.c **** 
+ 450:libcanard/drivers/stm32/canard_stm32.c **** 
+ 451:libcanard/drivers/stm32/canard_stm32.c **** int16_t canardSTM32ConfigureAcceptanceFilters(const CanardSTM32AcceptanceFilterConfiguration* const
+ 452:libcanard/drivers/stm32/canard_stm32.c ****                                               const uint8_t num_filter_configs)
+ 453:libcanard/drivers/stm32/canard_stm32.c **** {
+ 1048              		.loc 1 453 0
+ 1049              		.cfi_startproc
+ 1050              		@ args = 0, pretend = 0, frame = 0
+ 1051              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1052              		@ link register save eliminated.
+ 1053              	.LVL107:
+ 454:libcanard/drivers/stm32/canard_stm32.c ****     // Note that num_filter_configs = 0 is a valid configuration, which rejects all frames.
+ 455:libcanard/drivers/stm32/canard_stm32.c ****     if ((filter_configs == NULL) ||
+ 1054              		.loc 1 455 0
+ 1055 0000 0028     		cmp	r0, #0
+ 1056 0002 40D0     		beq	.L109
+ 453:libcanard/drivers/stm32/canard_stm32.c ****     // Note that num_filter_configs = 0 is a valid configuration, which rejects all frames.
+ 1057              		.loc 1 453 0 discriminator 1
+ 1058 0004 70B4     		push	{r4, r5, r6}
+ 1059              	.LCFI15:
+ 1060              		.cfi_def_cfa_offset 12
+ 1061              		.cfi_offset 4, -12
+ 1062              		.cfi_offset 5, -8
+ 1063              		.cfi_offset 6, -4
+ 1064 0006 0646     		mov	r6, r0
+ 1065              		.loc 1 455 0 discriminator 1
+ 1066 0008 0E29     		cmp	r1, #14
+ 1067 000a 3FD8     		bhi	.L110
+ 456:libcanard/drivers/stm32/canard_stm32.c ****         (num_filter_configs > CANARD_STM32_NUM_ACCEPTANCE_FILTERS))
+ 457:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 458:libcanard/drivers/stm32/canard_stm32.c ****         return -CANARD_ERROR_INVALID_ARGUMENT;
+ 459:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 460:libcanard/drivers/stm32/canard_stm32.c **** 
+ 461:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 462:libcanard/drivers/stm32/canard_stm32.c ****      * First we disable all filters. This may cause momentary RX frame losses, but the application
+ 463:libcanard/drivers/stm32/canard_stm32.c ****      * should be able to tolerate that.
+ 464:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 465:libcanard/drivers/stm32/canard_stm32.c ****     CANARD_STM32_CAN1->FA1R = 0;
+ 1068              		.loc 1 465 0
+ 1069 000c 0023     		movs	r3, #0
+ 1070 000e 214A     		ldr	r2, .L117
+ 1071 0010 C2F81C32 		str	r3, [r2, #540]
+ 1072              	.LVL108:
+ 1073              	.LBB20:
+ 466:libcanard/drivers/stm32/canard_stm32.c **** 
+ 467:libcanard/drivers/stm32/canard_stm32.c ****     /*
+ 468:libcanard/drivers/stm32/canard_stm32.c ****      * Having filters disabled we can update the configuration.
+ 469:libcanard/drivers/stm32/canard_stm32.c ****      * Register mapping: FR1 - ID, FR2 - Mask
+ 470:libcanard/drivers/stm32/canard_stm32.c ****      */
+ 471:libcanard/drivers/stm32/canard_stm32.c ****     for (uint8_t i = 0; i < num_filter_configs; i++)
+ 1074              		.loc 1 471 0
+ 1075 0014 16E0     		b	.L101
+ 1076              	.LVL109:
+ 1077              	.L103:
+ARM GAS  /tmp/ccUExmKF.s 			page 29
+
+
+ 1078              	.LBB21:
+ 472:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 473:libcanard/drivers/stm32/canard_stm32.c ****         /*
+ 474:libcanard/drivers/stm32/canard_stm32.c ****          * Converting the ID and the Mask into the representation that can be chewed by the hardwar
+ 475:libcanard/drivers/stm32/canard_stm32.c ****          * If Mask asks us to accept both STDID and EXTID, we need to use EXT mode on the filter,
+ 476:libcanard/drivers/stm32/canard_stm32.c ****          * otherwise it will reject all EXTID frames. This logic is not documented in the RM.
+ 477:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 478:libcanard/drivers/stm32/canard_stm32.c ****          * The logic of the hardware acceptance filters can be described as follows:
+ 479:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 480:libcanard/drivers/stm32/canard_stm32.c ****          *  accepted = (received_id & filter_mask) == (filter_id & filter_mask)
+ 481:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 482:libcanard/drivers/stm32/canard_stm32.c ****          * Where:
+ 483:libcanard/drivers/stm32/canard_stm32.c ****          *  - accepted      - if true, the frame will be accepted by the filter.
+ 484:libcanard/drivers/stm32/canard_stm32.c ****          *  - received_id   - the CAN ID of the received frame, either 11-bit or 29-bit, with exten
+ 485:libcanard/drivers/stm32/canard_stm32.c ****          *                    marking extended frames, error frames, etc.
+ 486:libcanard/drivers/stm32/canard_stm32.c ****          *  - filter_id     - the value of the filter ID register.
+ 487:libcanard/drivers/stm32/canard_stm32.c ****          *  - filter_mask   - the value of the filter mask register.
+ 488:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 489:libcanard/drivers/stm32/canard_stm32.c ****          * There are special bits that are not members of the CAN ID field:
+ 490:libcanard/drivers/stm32/canard_stm32.c ****          *  - EFF - set for extended frames (29-bit), cleared for standard frames (11-bit)
+ 491:libcanard/drivers/stm32/canard_stm32.c ****          *  - RTR - like above, indicates Remote Transmission Request frames.
+ 492:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 493:libcanard/drivers/stm32/canard_stm32.c ****          * The following truth table summarizes the logic (where: FM - filter mask, FID - filter ID
+ 494:libcanard/drivers/stm32/canard_stm32.c ****          * frame ID, A - true if accepted, X - any state):
+ 495:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 496:libcanard/drivers/stm32/canard_stm32.c ****          *  FM  FID RID A
+ 497:libcanard/drivers/stm32/canard_stm32.c ****          *  0   X   X   1
+ 498:libcanard/drivers/stm32/canard_stm32.c ****          *  1   0   0   1
+ 499:libcanard/drivers/stm32/canard_stm32.c ****          *  1   1   0   0
+ 500:libcanard/drivers/stm32/canard_stm32.c ****          *  1   0   1   0
+ 501:libcanard/drivers/stm32/canard_stm32.c ****          *  1   1   1   1
+ 502:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 503:libcanard/drivers/stm32/canard_stm32.c ****          * One would expect that for the purposes of hardware filtering, the special bits should be
+ 504:libcanard/drivers/stm32/canard_stm32.c ****          * in the same way as the real ID bits. However, this is not the case with bxCAN. The follo
+ 505:libcanard/drivers/stm32/canard_stm32.c ****          * table has been determined empirically (this behavior was not documented as of 2017):
+ 506:libcanard/drivers/stm32/canard_stm32.c ****          *
+ 507:libcanard/drivers/stm32/canard_stm32.c ****          *  FM  FID RID A
+ 508:libcanard/drivers/stm32/canard_stm32.c ****          *  0   0   0   1
+ 509:libcanard/drivers/stm32/canard_stm32.c ****          *  0   0   1   0       <-- frame rejected!
+ 510:libcanard/drivers/stm32/canard_stm32.c ****          *  0   1   X   1
+ 511:libcanard/drivers/stm32/canard_stm32.c ****          *  1   0   0   1
+ 512:libcanard/drivers/stm32/canard_stm32.c ****          *  1   1   0   0
+ 513:libcanard/drivers/stm32/canard_stm32.c ****          *  1   0   1   0
+ 514:libcanard/drivers/stm32/canard_stm32.c ****          *  1   1   1   1
+ 515:libcanard/drivers/stm32/canard_stm32.c ****          */
+ 516:libcanard/drivers/stm32/canard_stm32.c ****         uint32_t id   = 0;
+ 517:libcanard/drivers/stm32/canard_stm32.c ****         uint32_t mask = 0;
+ 518:libcanard/drivers/stm32/canard_stm32.c **** 
+ 519:libcanard/drivers/stm32/canard_stm32.c ****         const CanardSTM32AcceptanceFilterConfiguration* const cfg = filter_configs + i;
+ 520:libcanard/drivers/stm32/canard_stm32.c **** 
+ 521:libcanard/drivers/stm32/canard_stm32.c ****         if ((cfg->id & CANARD_CAN_FRAME_EFF) || !(cfg->mask & CANARD_CAN_FRAME_EFF))
+ 522:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 523:libcanard/drivers/stm32/canard_stm32.c ****             id   = (cfg->id   & CANARD_CAN_EXT_ID_MASK) << 3U;
+ 524:libcanard/drivers/stm32/canard_stm32.c ****             mask = (cfg->mask & CANARD_CAN_EXT_ID_MASK) << 3U;
+ 525:libcanard/drivers/stm32/canard_stm32.c ****             id |= CANARD_STM32_CAN_RIR_IDE;
+ 526:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 527:libcanard/drivers/stm32/canard_stm32.c ****         else
+ARM GAS  /tmp/ccUExmKF.s 			page 30
+
+
+ 528:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 529:libcanard/drivers/stm32/canard_stm32.c ****             id   = (cfg->id   & CANARD_CAN_STD_ID_MASK) << 21U;
+ 1079              		.loc 1 529 0
+ 1080 0016 6005     		lsls	r0, r4, #21
+ 1081              	.LVL110:
+ 530:libcanard/drivers/stm32/canard_stm32.c ****             mask = (cfg->mask & CANARD_CAN_STD_ID_MASK) << 21U;
+ 1082              		.loc 1 530 0
+ 1083 0018 5205     		lsls	r2, r2, #21
+ 1084              	.LVL111:
+ 1085 001a 23E0     		b	.L104
+ 1086              	.L116:
+ 531:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 532:libcanard/drivers/stm32/canard_stm32.c **** 
+ 533:libcanard/drivers/stm32/canard_stm32.c ****         if (cfg->id & CANARD_CAN_FRAME_RTR)
+ 534:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 535:libcanard/drivers/stm32/canard_stm32.c ****             id |= CANARD_STM32_CAN_RIR_RTR;
+ 536:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 537:libcanard/drivers/stm32/canard_stm32.c **** 
+ 538:libcanard/drivers/stm32/canard_stm32.c ****         if (cfg->mask & CANARD_CAN_FRAME_EFF)
+ 539:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 540:libcanard/drivers/stm32/canard_stm32.c ****             mask |= CANARD_STM32_CAN_RIR_IDE;
+ 1087              		.loc 1 540 0
+ 1088 001c 42F00402 		orr	r2, r2, #4
+ 1089              	.LVL112:
+ 1090 0020 28E0     		b	.L106
+ 1091              	.L107:
+ 1092              	.LVL113:
+ 541:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 542:libcanard/drivers/stm32/canard_stm32.c **** 
+ 543:libcanard/drivers/stm32/canard_stm32.c ****         if (cfg->mask & CANARD_CAN_FRAME_RTR)
+ 544:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 545:libcanard/drivers/stm32/canard_stm32.c ****             mask |= CANARD_STM32_CAN_RIR_RTR;
+ 546:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 547:libcanard/drivers/stm32/canard_stm32.c **** 
+ 548:libcanard/drivers/stm32/canard_stm32.c ****         /*
+ 549:libcanard/drivers/stm32/canard_stm32.c ****          * Applying the converted representation to the registers.
+ 550:libcanard/drivers/stm32/canard_stm32.c ****          */
+ 551:libcanard/drivers/stm32/canard_stm32.c ****         const uint8_t filter_index =
+ 552:libcanard/drivers/stm32/canard_stm32.c **** #if CANARD_STM32_USE_CAN2
+ 553:libcanard/drivers/stm32/canard_stm32.c ****             (uint8_t)(i + CANARD_STM32_NUM_ACCEPTANCE_FILTERS);
+ 554:libcanard/drivers/stm32/canard_stm32.c **** #else
+ 555:libcanard/drivers/stm32/canard_stm32.c ****             i;
+ 556:libcanard/drivers/stm32/canard_stm32.c **** #endif
+ 557:libcanard/drivers/stm32/canard_stm32.c ****         CANARD_STM32_CAN1->FilterRegister[filter_index].FR1 = id;
+ 1093              		.loc 1 557 0 discriminator 2
+ 1094 0022 1C4C     		ldr	r4, .L117
+ 1095 0024 03F14805 		add	r5, r3, #72
+ 1096              	.LVL114:
+ 1097 0028 44F83500 		str	r0, [r4, r5, lsl #3]
+ 558:libcanard/drivers/stm32/canard_stm32.c ****         CANARD_STM32_CAN1->FilterRegister[filter_index].FR2 = mask;
+ 1098              		.loc 1 558 0 discriminator 2
+ 1099 002c 04EBC505 		add	r5, r4, r5, lsl #3
+ 1100 0030 6A60     		str	r2, [r5, #4]
+ 559:libcanard/drivers/stm32/canard_stm32.c **** 
+ 560:libcanard/drivers/stm32/canard_stm32.c ****         CANARD_STM32_CAN1->FA1R |= 1U << filter_index;      // Enable
+ 1101              		.loc 1 560 0 discriminator 2
+ 1102 0032 D4F81C22 		ldr	r2, [r4, #540]
+ARM GAS  /tmp/ccUExmKF.s 			page 31
+
+
+ 1103              	.LVL115:
+ 1104 0036 0120     		movs	r0, #1
+ 1105              	.LVL116:
+ 1106 0038 9840     		lsls	r0, r0, r3
+ 1107 003a 0243     		orrs	r2, r2, r0
+ 1108 003c C4F81C22 		str	r2, [r4, #540]
+ 1109              	.LVL117:
+ 1110              	.LBE21:
+ 471:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 1111              		.loc 1 471 0 discriminator 2
+ 1112 0040 0133     		adds	r3, r3, #1
+ 1113              	.LVL118:
+ 1114 0042 DBB2     		uxtb	r3, r3
+ 1115              	.LVL119:
+ 1116              	.L101:
+ 471:libcanard/drivers/stm32/canard_stm32.c ****     {
+ 1117              		.loc 1 471 0 is_stmt 0 discriminator 1
+ 1118 0044 8B42     		cmp	r3, r1
+ 1119 0046 1BD2     		bcs	.L115
+ 1120              	.LVL120:
+ 1121              	.LBB22:
+ 519:libcanard/drivers/stm32/canard_stm32.c **** 
+ 1122              		.loc 1 519 0 is_stmt 1
+ 1123 0048 06EBC305 		add	r5, r6, r3, lsl #3
+ 1124              	.LVL121:
+ 521:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 1125              		.loc 1 521 0
+ 1126 004c 56F83340 		ldr	r4, [r6, r3, lsl #3]
+ 1127 0050 002C     		cmp	r4, #0
+ 1128 0052 02DB     		blt	.L102
+ 521:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 1129              		.loc 1 521 0 is_stmt 0 discriminator 1
+ 1130 0054 6A68     		ldr	r2, [r5, #4]
+ 1131 0056 002A     		cmp	r2, #0
+ 1132 0058 DDDB     		blt	.L103
+ 1133              	.L102:
+ 523:libcanard/drivers/stm32/canard_stm32.c ****             mask = (cfg->mask & CANARD_CAN_EXT_ID_MASK) << 3U;
+ 1134              		.loc 1 523 0 is_stmt 1
+ 1135 005a E000     		lsls	r0, r4, #3
+ 1136              	.LVL122:
+ 524:libcanard/drivers/stm32/canard_stm32.c ****             id |= CANARD_STM32_CAN_RIR_IDE;
+ 1137              		.loc 1 524 0
+ 1138 005c 6A68     		ldr	r2, [r5, #4]
+ 1139 005e D200     		lsls	r2, r2, #3
+ 1140              	.LVL123:
+ 525:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 1141              		.loc 1 525 0
+ 1142 0060 40F00400 		orr	r0, r0, #4
+ 1143              	.LVL124:
+ 1144              	.L104:
+ 533:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 1145              		.loc 1 533 0
+ 1146 0064 14F0804F 		tst	r4, #1073741824
+ 1147 0068 01D0     		beq	.L105
+ 535:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 1148              		.loc 1 535 0
+ 1149 006a 40F00200 		orr	r0, r0, #2
+ARM GAS  /tmp/ccUExmKF.s 			page 32
+
+
+ 1150              	.LVL125:
+ 1151              	.L105:
+ 538:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 1152              		.loc 1 538 0
+ 1153 006e 6C68     		ldr	r4, [r5, #4]
+ 1154 0070 002C     		cmp	r4, #0
+ 1155 0072 D3DB     		blt	.L116
+ 1156              	.L106:
+ 543:libcanard/drivers/stm32/canard_stm32.c ****         {
+ 1157              		.loc 1 543 0
+ 1158 0074 14F0804F 		tst	r4, #1073741824
+ 1159 0078 D3D0     		beq	.L107
+ 545:libcanard/drivers/stm32/canard_stm32.c ****         }
+ 1160              		.loc 1 545 0
+ 1161 007a 42F00202 		orr	r2, r2, #2
+ 1162              	.LVL126:
+ 1163 007e D0E7     		b	.L107
+ 1164              	.LVL127:
+ 1165              	.L115:
+ 1166              	.LBE22:
+ 1167              	.LBE20:
+ 561:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 562:libcanard/drivers/stm32/canard_stm32.c **** 
+ 563:libcanard/drivers/stm32/canard_stm32.c ****     return 0;
+ 1168              		.loc 1 563 0
+ 1169 0080 0020     		movs	r0, #0
+ 1170              	.LVL128:
+ 1171              	.L100:
+ 564:libcanard/drivers/stm32/canard_stm32.c **** }
+ 1172              		.loc 1 564 0
+ 1173 0082 70BC     		pop	{r4, r5, r6}
+ 1174              	.LCFI16:
+ 1175              		.cfi_restore 6
+ 1176              		.cfi_restore 5
+ 1177              		.cfi_restore 4
+ 1178              		.cfi_def_cfa_offset 0
+ 1179              	.LVL129:
+ 1180 0084 7047     		bx	lr
+ 1181              	.LVL130:
+ 1182              	.L109:
+ 458:libcanard/drivers/stm32/canard_stm32.c ****     }
+ 1183              		.loc 1 458 0
+ 1184 0086 6FF00100 		mvn	r0, #1
+ 1185              	.LVL131:
+ 1186 008a 7047     		bx	lr
+ 1187              	.LVL132:
+ 1188              	.L110:
+ 1189              	.LCFI17:
+ 1190              		.cfi_def_cfa_offset 12
+ 1191              		.cfi_offset 4, -12
+ 1192              		.cfi_offset 5, -8
+ 1193              		.cfi_offset 6, -4
+ 1194 008c 6FF00100 		mvn	r0, #1
+ 1195              	.LVL133:
+ 1196 0090 F7E7     		b	.L100
+ 1197              	.L118:
+ 1198 0092 00BF     		.align	2
+ARM GAS  /tmp/ccUExmKF.s 			page 33
+
+
+ 1199              	.L117:
+ 1200 0094 00640040 		.word	1073767424
+ 1201              		.cfi_endproc
+ 1202              	.LFE73:
+ 1204              		.section	.text.canardSTM32GetStats,"ax",%progbits
+ 1205              		.align	1
+ 1206              		.global	canardSTM32GetStats
+ 1207              		.syntax unified
+ 1208              		.thumb
+ 1209              		.thumb_func
+ 1210              		.fpu softvfp
+ 1212              	canardSTM32GetStats:
+ 1213              	.LFB74:
+ 565:libcanard/drivers/stm32/canard_stm32.c **** 
+ 566:libcanard/drivers/stm32/canard_stm32.c **** 
+ 567:libcanard/drivers/stm32/canard_stm32.c **** CanardSTM32Stats canardSTM32GetStats(void)
+ 568:libcanard/drivers/stm32/canard_stm32.c **** {
+ 1214              		.loc 1 568 0
+ 1215              		.cfi_startproc
+ 1216              		@ args = 0, pretend = 0, frame = 0
+ 1217              		@ frame_needed = 0, uses_anonymous_args = 0
+ 1218              		@ link register save eliminated.
+ 1219              	.LVL134:
+ 1220 0000 10B4     		push	{r4}
+ 1221              	.LCFI18:
+ 1222              		.cfi_def_cfa_offset 4
+ 1223              		.cfi_offset 4, -4
+ 1224 0002 0446     		mov	r4, r0
+ 569:libcanard/drivers/stm32/canard_stm32.c ****     return g_stats;
+ 1225              		.loc 1 569 0
+ 1226 0004 034B     		ldr	r3, .L121
+ 1227 0006 0FCB     		ldm	r3, {r0, r1, r2, r3}
+ 1228              	.LVL135:
+ 1229 0008 84E80F00 		stm	r4, {r0, r1, r2, r3}
+ 570:libcanard/drivers/stm32/canard_stm32.c **** }
+ 1230              		.loc 1 570 0
+ 1231 000c 2046     		mov	r0, r4
+ 1232 000e 10BC     		pop	{r4}
+ 1233              	.LCFI19:
+ 1234              		.cfi_restore 4
+ 1235              		.cfi_def_cfa_offset 0
+ 1236              	.LVL136:
+ 1237 0010 7047     		bx	lr
+ 1238              	.L122:
+ 1239 0012 00BF     		.align	2
+ 1240              	.L121:
+ 1241 0014 00000000 		.word	.LANCHOR0
+ 1242              		.cfi_endproc
+ 1243              	.LFE74:
+ 1245              		.section	.bss.g_abort_tx_on_error,"aw",%nobits
+ 1246              		.set	.LANCHOR1,. + 0
+ 1249              	g_abort_tx_on_error:
+ 1250 0000 00       		.space	1
+ 1251              		.section	.bss.g_stats,"aw",%nobits
+ 1252              		.align	3
+ 1253              		.set	.LANCHOR0,. + 0
+ 1256              	g_stats:
+ARM GAS  /tmp/ccUExmKF.s 			page 34
+
+
+ 1257 0000 00000000 		.space	16
+ 1257      00000000 
+ 1257      00000000 
+ 1257      00000000 
+ 1258              		.section	.rodata.RFxR.7345,"a",%progbits
+ 1259              		.align	2
+ 1260              		.set	.LANCHOR4,. + 0
+ 1263              	RFxR.7345:
+ 1264 0000 0C640040 		.word	1073767436
+ 1265 0004 10640040 		.word	1073767440
+ 1266              		.section	.rodata.__func__.7328,"a",%progbits
+ 1267              		.align	2
+ 1268              		.set	.LANCHOR2,. + 0
+ 1271              	__func__.7328:
+ 1272 0000 63616E61 		.ascii	"canardSTM32Init\000"
+ 1272      72645354 
+ 1272      4D333249 
+ 1272      6E697400 
+ 1273              		.section	.rodata.__func__.7340,"a",%progbits
+ 1274              		.align	2
+ 1275              		.set	.LANCHOR3,. + 0
+ 1278              	__func__.7340:
+ 1279 0000 63616E61 		.ascii	"canardSTM32Transmit\000"
+ 1279      72645354 
+ 1279      4D333254 
+ 1279      72616E73 
+ 1279      6D697400 
+ 1280              		.section	.rodata.canardSTM32Init.str1.4,"aMS",%progbits,1
+ 1281              		.align	2
+ 1282              	.LC0:
+ 1283 0000 30203D3D 		.ascii	"0 == ((volatile CanardSTM32CANType*)0x40006400U)->I"
+ 1283      20282876 
+ 1283      6F6C6174 
+ 1283      696C6520 
+ 1283      43616E61 
+ 1284 0033 455200   		.ascii	"ER\000"
+ 1285 0036 0000     		.space	2
+ 1286              	.LC1:
+ 1287 0038 6C696263 		.ascii	"libcanard/drivers/stm32/canard_stm32.c\000"
+ 1287      616E6172 
+ 1287      642F6472 
+ 1287      69766572 
+ 1287      732F7374 
+ 1288 005f 00       		.space	1
+ 1289              	.LC2:
+ 1290 0060 28282828 		.ascii	"((((volatile CanardSTM32CANType*)0x40006400U)->FMR "
+ 1290      766F6C61 
+ 1290      74696C65 
+ 1290      2043616E 
+ 1290      61726453 
+ 1291 0093 3E3E2038 		.ascii	">> 8U) & 0x3FU) == 14U\000"
+ 1291      55292026 
+ 1291      20307833 
+ 1291      46552920 
+ 1291      3D3D2031 
+ 1292              		.section	.rodata.canardSTM32Transmit.str1.4,"aMS",%progbits,1
+ 1293              		.align	2
+ARM GAS  /tmp/ccUExmKF.s 			page 35
+
+
+ 1294              	.LC3:
+ 1295 0000 21224341 		.ascii	"!\"CAN PRIO INV\"\000"
+ 1295      4E205052 
+ 1295      494F2049 
+ 1295      4E562200 
+ 1296              	.LC4:
+ 1297 0010 74785F6D 		.ascii	"tx_mailbox < 3\000"
+ 1297      61696C62 
+ 1297      6F78203C 
+ 1297      203300
+ 1298              		.text
+ 1299              	.Letext0:
+ 1300              		.file 2 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/machine/_default_types.
+ 1301              		.file 3 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/sys/_stdint.h"
+ 1302              		.file 4 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/stdint.h"
+ 1303              		.file 5 "libcanard/canard.h"
+ 1304              		.file 6 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/sys/lock.h"
+ 1305              		.file 7 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/sys/_types.h"
+ 1306              		.file 8 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/lib/gcc/arm-none-eabi/6.3.1/include/stddef.h"
+ 1307              		.file 9 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/sys/reent.h"
+ 1308              		.file 10 "libcanard/drivers/stm32/canard_stm32.h"
+ 1309              		.file 11 "libcanard/drivers/stm32/_internal_bxcan.h"
+ 1310              		.file 12 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/sys/unistd.h"
+ 1311              		.file 13 "Drivers/CMSIS/Include/core_cm3.h"
+ 1312              		.file 14 "Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h"
+ 1313              		.file 15 "/usr/bin/gcc-arm-none-eabi-6-2017-q2-update/arm-none-eabi/include/assert.h"
+ 1314              		.file 16 "Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h"
+ARM GAS  /tmp/ccUExmKF.s 			page 36
+
+
+DEFINED SYMBOLS
+                            *ABS*:0000000000000000 canard_stm32.c
+     /tmp/ccUExmKF.s:16     .text.isFramePriorityHigher:0000000000000000 $t
+     /tmp/ccUExmKF.s:22     .text.isFramePriorityHigher:0000000000000000 isFramePriorityHigher
+     /tmp/ccUExmKF.s:135    .text.convertFrameIDCanardToRegister:0000000000000000 $t
+     /tmp/ccUExmKF.s:141    .text.convertFrameIDCanardToRegister:0000000000000000 convertFrameIDCanardToRegister
+     /tmp/ccUExmKF.s:176    .text.convertFrameIDRegisterToCanard:0000000000000000 $t
+     /tmp/ccUExmKF.s:182    .text.convertFrameIDRegisterToCanard:0000000000000000 convertFrameIDRegisterToCanard
+     /tmp/ccUExmKF.s:219    .text.processErrorStatus:0000000000000000 $t
+     /tmp/ccUExmKF.s:225    .text.processErrorStatus:0000000000000000 processErrorStatus
+     /tmp/ccUExmKF.s:269    .text.processErrorStatus:0000000000000038 $d
+     /tmp/ccUExmKF.s:277    .text.waitMSRINAKBitStateChange:0000000000000000 $t
+     /tmp/ccUExmKF.s:283    .text.waitMSRINAKBitStateChange:0000000000000000 waitMSRINAKBitStateChange
+     /tmp/ccUExmKF.s:347    .text.canardSTM32Init:0000000000000000 $t
+     /tmp/ccUExmKF.s:354    .text.canardSTM32Init:0000000000000000 canardSTM32Init
+     /tmp/ccUExmKF.s:644    .text.canardSTM32Init:00000000000001ac $d
+     /tmp/ccUExmKF.s:656    .text.canardSTM32Transmit:0000000000000000 $t
+     /tmp/ccUExmKF.s:663    .text.canardSTM32Transmit:0000000000000000 canardSTM32Transmit
+     /tmp/ccUExmKF.s:884    .text.canardSTM32Transmit:00000000000000fc $d
+     /tmp/ccUExmKF.s:894    .text.canardSTM32Receive:0000000000000000 $t
+     /tmp/ccUExmKF.s:901    .text.canardSTM32Receive:0000000000000000 canardSTM32Receive
+     /tmp/ccUExmKF.s:1032   .text.canardSTM32Receive:000000000000008c $d
+     /tmp/ccUExmKF.s:1039   .text.canardSTM32ConfigureAcceptanceFilters:0000000000000000 $t
+     /tmp/ccUExmKF.s:1046   .text.canardSTM32ConfigureAcceptanceFilters:0000000000000000 canardSTM32ConfigureAcceptanceFilters
+     /tmp/ccUExmKF.s:1200   .text.canardSTM32ConfigureAcceptanceFilters:0000000000000094 $d
+     /tmp/ccUExmKF.s:1205   .text.canardSTM32GetStats:0000000000000000 $t
+     /tmp/ccUExmKF.s:1212   .text.canardSTM32GetStats:0000000000000000 canardSTM32GetStats
+     /tmp/ccUExmKF.s:1241   .text.canardSTM32GetStats:0000000000000014 $d
+     /tmp/ccUExmKF.s:1249   .bss.g_abort_tx_on_error:0000000000000000 g_abort_tx_on_error
+     /tmp/ccUExmKF.s:1250   .bss.g_abort_tx_on_error:0000000000000000 $d
+     /tmp/ccUExmKF.s:1252   .bss.g_stats:0000000000000000 $d
+     /tmp/ccUExmKF.s:1256   .bss.g_stats:0000000000000000 g_stats
+     /tmp/ccUExmKF.s:1259   .rodata.RFxR.7345:0000000000000000 $d
+     /tmp/ccUExmKF.s:1263   .rodata.RFxR.7345:0000000000000000 RFxR.7345
+     /tmp/ccUExmKF.s:1267   .rodata.__func__.7328:0000000000000000 $d
+     /tmp/ccUExmKF.s:1271   .rodata.__func__.7328:0000000000000000 __func__.7328
+     /tmp/ccUExmKF.s:1274   .rodata.__func__.7340:0000000000000000 $d
+     /tmp/ccUExmKF.s:1278   .rodata.__func__.7340:0000000000000000 __func__.7340
+     /tmp/ccUExmKF.s:1281   .rodata.canardSTM32Init.str1.4:0000000000000000 $d
+     /tmp/ccUExmKF.s:1293   .rodata.canardSTM32Transmit.str1.4:0000000000000000 $d
+                     .debug_frame:0000000000000010 $d
+
+UNDEFINED SYMBOLS
+HAL_Delay
+__assert_func

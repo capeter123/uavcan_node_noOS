@@ -37,9 +37,13 @@
   ******************************************************************************
   */
 /* Includes ------------------------------------------------------------------*/
+#include <stdio.h>
+#include <stdlib.h>
 #include "main.h"
 #include "stm32f1xx_hal.h"
-
+#include "canard.h"
+#include "canard_stm32.h"
+#include "uavcan.h"
 /* USER CODE BEGIN Includes */
 
 /* USER CODE END Includes */
@@ -49,6 +53,7 @@ CAN_HandleTypeDef hcan;
 
 UART_HandleTypeDef huart1;
 
+char str[25];
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
@@ -60,20 +65,14 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_CAN_Init(void);
 
-/* USER CODE BEGIN PFP */
-/* Private function prototypes -----------------------------------------------*/
 
-/* USER CODE END PFP */
 
-/* USER CODE BEGIN 0 */
 
-/* USER CODE END 0 */
 
-/**
-  * @brief  The application entry point.
-  *
-  * @retval None
-  */
+
+
+
+
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -95,13 +94,13 @@ int main(void)
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
-
+  
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_USART1_UART_Init();
   MX_CAN_Init();
   /* USER CODE BEGIN 2 */
-
+  uavcanInit();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -110,7 +109,16 @@ int main(void)
   {
 
   /* USER CODE END WHILE */
-
+    //itoa(HAL_RCC_GetPCLK1Freq(),str,10);
+    //HAL_UART_Transmit(&huart1,str,25,0XFFFF);
+    //HAL_UART_Transmit(&huart1,"\n",2,0XFFFF);
+   // HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_12);
+    //HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_13);
+    //HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_14);
+    sendCanard();
+    receiveCanard();
+    spinCanard();
+    //HAL_Delay(100);
   /* USER CODE BEGIN 3 */
 
   }
@@ -255,6 +263,7 @@ void _Error_Handler(char *file, int line)
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {
+      
   }
   /* USER CODE END Error_Handler_Debug */
 }

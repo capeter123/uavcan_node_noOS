@@ -53,6 +53,8 @@ Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c \
 Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c \
 Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c \
 Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c \
+Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_ll_rcc.c \
+Src/uavcan.c \
 Src/system_stm32f1xx.c  
 
 # ASM sources
@@ -117,7 +119,16 @@ C_INCLUDES =  \
 -IDrivers/CMSIS/Include
 
 
-# compile gcc flags
+
+
+# Adding the library.
+C_INCLUDES += -Ilibcanard
+C_SOURCES += libcanard/canard.c
+
+# Adding drivers, 
+C_INCLUDES += -Ilibcanard/drivers/stm32
+C_SOURCES += libcanard/drivers/stm32/canard_stm32.c
+
 ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
 
 CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
@@ -180,6 +191,10 @@ $(BUILD_DIR):
 #######################################
 clean:
 	-rm -fR $(BUILD_DIR)
+
+flash:
+	make
+	st-flash --reset write $(BUILD_DIR)/$(TARGET).bin 0x8000000 
   
 #######################################
 # dependencies
